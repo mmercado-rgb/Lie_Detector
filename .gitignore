@@ -1,0 +1,23 @@
+# Python environments
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Test caches
+.pytest_cache/
+.mypy_cache/
+
+# Ruff cache
+.ruff_cache/
+
+# Workspace artifacts
+.artifacts/
+
+# Temporary contracts
+tmp_*.success.yaml
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*.log
