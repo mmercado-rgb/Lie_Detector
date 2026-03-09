@@ -1,7 +1,7 @@
 The live experiment shows a verifier integrity gap.
 
 Repro:
-1. run_agent.py on workspace.success.yaml
+1. run_agent.py on workspace.success.json
 2. verify.py => PASS
 3. manually inject .artifacts/unauthorized.txt
 4. verify.py => still PASS

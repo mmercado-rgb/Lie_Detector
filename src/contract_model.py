@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import re
 import shlex
 from collections.abc import Mapping
@@ -26,42 +25,21 @@ COMMAND_TYPES: Final[frozenset[ConditionType]] = frozenset(
     (*EXECUTOR_COMMAND_TYPES, *VERIFIER_COMMAND_TYPES)
 )
 SUPPORTED_TYPES: Final[frozenset[ConditionType]] = frozenset((*COMMAND_TYPES, "file_exists"))
-REQUIRED_TOP_LEVEL_KEYS: Final[frozenset[str]] = frozenset(
-    {
-        "version",
-        "task_id",
-        "goal",
-        "inputs",
-        "success_conditions",
-        "evidence",
-        "policy",
-    }
-)
-INPUT_KEYS: Final[frozenset[str]] = frozenset({"repo_root", "allowed_paths"})
-EVIDENCE_KEYS: Final[frozenset[str]] = frozenset(
-    {
-        "output_dir",
-        "save_stdout",
-        "save_stderr",
-        "save_exit_codes",
-        "hash_algorithm",
-        "freshness_path",
-    }
-)
-POLICY_KEYS: Final[frozenset[str]] = frozenset(
-    {
-        "fail_closed",
-        "executor_cannot_claim_success",
-        "verifier_is_final_authority",
-        "require_black_box_verification",
-        "reserved_outcome_words",
-    }
-)
-BASE_CONDITION_KEYS: Final[frozenset[str]] = frozenset({"id", "type"})
-FILE_EXISTS_KEYS: Final[frozenset[str]] = frozenset((*BASE_CONDITION_KEYS, "path"))
-COMMAND_EXIT_ZERO_KEYS: Final[frozenset[str]] = frozenset((*BASE_CONDITION_KEYS, "command"))
-STDOUT_CONTAINS_KEYS: Final[frozenset[str]] = frozenset(
-    (*BASE_CONDITION_KEYS, "command", "contains")
+SCHEMA_REQUIRED_CONDITION_FIELDS: Final[dict[ConditionType, frozenset[str]]] = {
+    "command_exit_zero": frozenset({"command"}),
+    "verifier_command_exit_zero": frozenset({"command"}),
+    "command_stdout_contains": frozenset({"command", "contains"}),
+    "verifier_stdout_contains": frozenset({"command", "contains"}),
+    "file_exists": frozenset({"path"}),
+}
+REQUIRED_TOP_LEVEL_FIELDS: Final[tuple[str, ...]] = (
+    "version",
+    "task_id",
+    "goal",
+    "inputs",
+    "success_conditions",
+    "evidence",
+    "policy",
 )
 HASH_ALGORITHMS: Final[frozenset[str]] = frozenset({"sha256"})
 ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -137,149 +115,10 @@ class Contract:
     policy: Policy
 
 
-class SimpleYamlError(ValueError):
-    pass
-
-
-class SimpleYamlParser:
-    def __init__(self, text: str) -> None:
-        self.lines: list[tuple[int, str]] = self._prepare_lines(text)
-        self.index: int = 0
-
-    def parse(self) -> object:
-        if not self.lines:
-            raise SimpleYamlError("yaml document is empty")
-        value = self._parse_block(self.lines[0][0])
-        if self.index != len(self.lines):
-            raise SimpleYamlError("yaml document has trailing content")
-        return value
-
-    def _prepare_lines(self, text: str) -> list[tuple[int, str]]:
-        prepared: list[tuple[int, str]] = []
-        for raw_line in text.splitlines():
-            stripped = raw_line.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            indent = len(raw_line) - len(raw_line.lstrip(" "))
-            prepared.append((indent, raw_line[indent:]))
-        return prepared
-
-    def _parse_block(self, indent: int) -> object:
-        current_indent, content = self.lines[self.index]
-        if current_indent != indent:
-            raise SimpleYamlError("invalid indentation")
-        if content.startswith("- "):
-            return self._parse_list(indent)
-        return self._parse_mapping(indent)
-
-    def _parse_mapping(self, indent: int) -> dict[str, object]:
-        mapping: dict[str, object] = {}
-        while self.index < len(self.lines):
-            current_indent, content = self.lines[self.index]
-            if current_indent < indent:
-                break
-            if current_indent != indent:
-                raise SimpleYamlError("unexpected indentation in mapping")
-            if content.startswith("- "):
-                raise SimpleYamlError("list item found where mapping entry was expected")
-            key, value_text = self._split_key_value(content)
-            if key in mapping:
-                raise SimpleYamlError(f"duplicate mapping key: {key}")
-            self.index += 1
-            mapping[key] = self._parse_value_or_nested_block(indent, value_text)
-        return mapping
-
-    def _parse_list(self, indent: int) -> list[object]:
-        items: list[object] = []
-        while self.index < len(self.lines):
-            current_indent, content = self.lines[self.index]
-            if current_indent < indent:
-                break
-            if current_indent != indent or not content.startswith("- "):
-                raise SimpleYamlError("unexpected content in list")
-            self.index += 1
-            item_text = content[2:].strip()
-            if not item_text:
-                if self.index >= len(self.lines) or self.lines[self.index][0] <= indent:
-                    raise SimpleYamlError("list item requires a value")
-                items.append(self._parse_block(indent + 2))
-                continue
-            if ":" in item_text:
-                key, value_text = self._split_key_value(item_text)
-                item_mapping: dict[str, object] = {}
-                if key in item_mapping:
-                    raise SimpleYamlError(f"duplicate mapping key: {key}")
-                item_mapping[key] = self._parse_value_or_nested_block(indent, value_text)
-                tail = self._parse_list_item_mapping_tail(indent)
-                duplicate_keys = set(item_mapping) & set(tail)
-                if duplicate_keys:
-                    raise SimpleYamlError(
-                        f"duplicate mapping key: {sorted(duplicate_keys)[0]}"
-                    )
-                item_mapping.update(tail)
-                items.append(item_mapping)
-                continue
-            items.append(self._parse_scalar(item_text))
-        return items
-
-    def _parse_list_item_mapping_tail(self, indent: int) -> dict[str, object]:
-        mapping: dict[str, object] = {}
-        while self.index < len(self.lines):
-            current_indent, content = self.lines[self.index]
-            if current_indent <= indent:
-                break
-            if current_indent != indent + 2 or content.startswith("- "):
-                raise SimpleYamlError("invalid list item mapping indentation")
-            key, value_text = self._split_key_value(content)
-            if key in mapping:
-                raise SimpleYamlError(f"duplicate mapping key: {key}")
-            self.index += 1
-            mapping[key] = self._parse_value_or_nested_block(indent + 2, value_text)
-        return mapping
-
-    def _parse_value_or_nested_block(self, parent_indent: int, value_text: str) -> object:
-        if value_text:
-            return self._parse_scalar(value_text)
-        if self.index >= len(self.lines) or self.lines[self.index][0] <= parent_indent:
-            return None
-        return self._parse_block(parent_indent + 2)
-
-    def _split_key_value(self, content: str) -> tuple[str, str]:
-        if ":" not in content:
-            raise SimpleYamlError("mapping entry is missing ':'")
-        key, value_text = content.split(":", 1)
-        key_text = key.strip()
-        if not key_text:
-            raise SimpleYamlError("mapping key must be non-empty")
-        return key_text, value_text.strip()
-
-    def _parse_scalar(self, value_text: str) -> object:
-        lowered = value_text.lower()
-        if lowered == "true":
-            return True
-        if lowered == "false":
-            return False
-        if lowered in {"null", "~"}:
-            return None
-        if (
-            value_text.startswith(("'", '"'))
-            and value_text.endswith(("'", '"'))
-            and len(value_text) >= 2
-        ):
-            return cast(object, ast.literal_eval(value_text))
-        if value_text.lstrip("-").isdigit():
-            return int(value_text)
-        return value_text
-
-
 def load_contract(contract_path: Path) -> Contract:
-    try:
-        data = SimpleYamlParser(contract_path.read_text(encoding="utf-8")).parse()
-    except FileNotFoundError as exc:
-        raise ValueError(f"contract file not found: {contract_path}") from exc
-    except SimpleYamlError as exc:
-        raise ValueError(f"contract yaml parse error: {exc}") from exc
-    return validate_contract(data)
+    raise ValueError(
+        "direct contract loading is forbidden; use load_contract_with_integrity_gate(contract_path)"
+    )
 
 
 def require_mapping(value: object, name: str) -> Mapping[str, object]:
@@ -290,19 +129,6 @@ def require_mapping(value: object, name: str) -> Mapping[str, object]:
     if not all(isinstance(key, str) for key in keys):
         raise ValueError(f"{name} must use string keys")
     return cast(Mapping[str, object], raw_mapping)
-
-
-def require_exact_keys(
-    mapping: Mapping[str, object],
-    name: str,
-    expected_keys: frozenset[str],
-) -> None:
-    missing_keys = expected_keys - set(mapping)
-    unknown_keys = set(mapping) - expected_keys
-    if missing_keys:
-        raise ValueError(f"{name} missing keys: {', '.join(sorted(missing_keys))}")
-    if unknown_keys:
-        raise ValueError(f"{name} has unknown keys: {', '.join(sorted(unknown_keys))}")
 
 
 def require_non_empty_string(value: object, name: str) -> str:
@@ -406,7 +232,6 @@ def require_string_list(value: object, name: str) -> list[str]:
 
 def parse_inputs(inputs_value: object) -> Inputs:
     inputs = require_mapping(inputs_value, "inputs")
-    require_exact_keys(inputs, "inputs", INPUT_KEYS)
     repo_root = require_repo_root(inputs.get("repo_root"), "inputs.repo_root")
     allowed_paths_value = require_non_empty_list(
         inputs.get("allowed_paths"),
@@ -421,7 +246,6 @@ def parse_inputs(inputs_value: object) -> Inputs:
 
 def parse_evidence(evidence_value: object) -> Evidence:
     evidence = require_mapping(evidence_value, "evidence")
-    require_exact_keys(evidence, "evidence", EVIDENCE_KEYS)
     hash_algorithm = require_non_empty_string(evidence.get("hash_algorithm"), "evidence.hash_algorithm")
     if hash_algorithm not in HASH_ALGORITHMS:
         raise ValueError(f"unsupported evidence.hash_algorithm: {hash_algorithm}")
@@ -437,7 +261,6 @@ def parse_evidence(evidence_value: object) -> Evidence:
 
 def parse_policy(policy_value: object) -> Policy:
     policy = require_mapping(policy_value, "policy")
-    require_exact_keys(policy, "policy", POLICY_KEYS)
     return Policy(
         fail_closed=require_bool(policy.get("fail_closed"), "policy.fail_closed"),
         executor_cannot_claim_success=require_bool(
@@ -465,13 +288,6 @@ def parse_success_condition(index: int, item: object) -> SuccessCondition:
         condition.get("type"),
         f"success_conditions[{index}].type",
     )
-    if condition_type == "file_exists":
-        require_exact_keys(condition, f"success_conditions[{index}]", FILE_EXISTS_KEYS)
-    elif condition_type in {"command_stdout_contains", "verifier_stdout_contains"}:
-        require_exact_keys(condition, f"success_conditions[{index}]", STDOUT_CONTAINS_KEYS)
-    else:
-        require_exact_keys(condition, f"success_conditions[{index}]", COMMAND_EXIT_ZERO_KEYS)
-
     verifier_run = condition_type in VERIFIER_COMMAND_TYPES
     return SuccessCondition(
         id=require_condition_id(condition.get("id"), f"success_conditions[{index}].id"),
@@ -518,7 +334,9 @@ def parse_success_conditions(conditions_value: object) -> list[SuccessCondition]
 
 def validate_contract(contract_value: object) -> Contract:
     contract = require_mapping(contract_value, "contract")
-    require_exact_keys(contract, "contract", REQUIRED_TOP_LEVEL_KEYS)
+    missing_required = [field for field in REQUIRED_TOP_LEVEL_FIELDS if field not in contract]
+    if missing_required:
+        raise ValueError(f"contract missing keys: {', '.join(sorted(missing_required))}")
 
     version = contract.get("version")
     if version != 2:
@@ -540,3 +358,50 @@ def validate_contract(contract_value: object) -> Contract:
         raise ValueError("policy.require_black_box_verification requires a verifier-run condition")
 
     return parsed_contract
+
+
+def assert_schema_condition_alignment(schema: object) -> None:
+    schema_map = require_mapping(schema, "schema")
+    properties = require_mapping(schema_map.get("properties"), "schema.properties")
+    success_conditions = require_mapping(
+        properties.get("success_conditions"),
+        "schema.properties.success_conditions",
+    )
+    items = require_mapping(
+        success_conditions.get("items"),
+        "schema.properties.success_conditions.items",
+    )
+    raw_variants = items.get("oneOf")
+    if not isinstance(raw_variants, list) or not raw_variants:
+        raise ValueError("schema success condition variants are invalid")
+
+    schema_required_fields: dict[ConditionType, frozenset[str]] = {}
+    for index, variant in enumerate(raw_variants):
+        variant_map = require_mapping(variant, f"schema success condition variant {index}")
+        variant_properties = require_mapping(
+            variant_map.get("properties"),
+            f"schema success condition variant {index}.properties",
+        )
+        type_schema = require_mapping(
+            variant_properties.get("type"),
+            f"schema success condition variant {index}.properties.type",
+        )
+        raw_condition_type = type_schema.get("const")
+        if not isinstance(raw_condition_type, str) or raw_condition_type not in SUPPORTED_TYPES:
+            raise ValueError(
+                f"schema success condition variant {index} has unsupported type const"
+            )
+        condition_type = cast(ConditionType, raw_condition_type)
+        if condition_type in schema_required_fields:
+            raise ValueError(f"schema has duplicate success condition type: {condition_type}")
+
+        raw_required = variant_map.get("required")
+        if not isinstance(raw_required, list) or not raw_required:
+            raise ValueError(f"schema success condition variant {condition_type} missing required fields")
+        required_fields = {field for field in raw_required if isinstance(field, str)}
+        if "id" not in required_fields or "type" not in required_fields:
+            raise ValueError(f"schema success condition variant {condition_type} must require id and type")
+        schema_required_fields[condition_type] = frozenset(required_fields - {"id", "type"})
+
+    if schema_required_fields != SCHEMA_REQUIRED_CONDITION_FIELDS:
+        raise ValueError("schema success condition variants drifted from contract model")

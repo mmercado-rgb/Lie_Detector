@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from collections.abc import Mapping
@@ -8,19 +9,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, cast
 
-
 from src.contract_model import (
     Contract,
+    assert_schema_condition_alignment,
     extract_python_script_path,
-    load_contract,
+    validate_contract,
     normalize_relative_text,
     require_non_empty_string,
     split_command_tokens,
 )
 from src.evidence import ensure_within, sha256_file
 
-REPO_CONTRACT_NAME: Final[str] = "workspace.success.yaml"
+REPO_CONTRACT_NAME: Final[str] = "workspace.success.json"
 LOCK_RELATIVE_PATH: Final[str] = ".truth/lock.json"
+CONTRACT_SCHEMA_RELATIVE_PATH: Final[str] = "schemas/workspace_success.schema.json"
+PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 REQUIRED_LOCKED_FILES: Final[frozenset[str]] = frozenset(
     {
         REPO_CONTRACT_NAME,
@@ -52,6 +55,142 @@ class IntegrityLock:
     tracked_files: dict[str, str]
     verifier_runs: dict[str, LockedVerifierRun]
     command_resolution: dict[str, LockedCommandResolution]
+
+def _reject_duplicate_mapping_keys(pairs: list[tuple[object, object]]) -> dict[str, object]:
+    mapping: dict[str, object] = {}
+    for raw_key, value in pairs:
+        if not isinstance(raw_key, str):
+            raise ValueError("contract json object keys must be strings")
+        if raw_key in mapping:
+            raise ValueError(f"duplicate mapping key: {raw_key}")
+        mapping[raw_key] = value
+    return mapping
+
+
+def parse_contract_json(contract_path: Path) -> object:
+    try:
+        text = contract_path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise ValueError(f"contract file not found: {contract_path}") from exc
+
+    try:
+        return cast(object, json.loads(text, object_pairs_hook=_reject_duplicate_mapping_keys))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"contract json parse error: {exc}") from exc
+    except Exception as exc:
+        raise ValueError(f"contract json parse error: {exc}") from exc
+
+
+PathSegment = str | int
+
+
+def _path_text(path: tuple[PathSegment, ...]) -> str:
+    if not path:
+        return "contract"
+    rendered = "contract"
+    for segment in path:
+        if isinstance(segment, int):
+            rendered += f"[{segment}]"
+        else:
+            rendered += f".{segment}"
+    return rendered
+
+
+def _type_matches(expected_type: str, value: object) -> bool:
+    if expected_type == "object":
+        return isinstance(value, dict)
+    if expected_type == "array":
+        return isinstance(value, list)
+    if expected_type == "string":
+        return isinstance(value, str)
+    if expected_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected_type == "boolean":
+        return isinstance(value, bool)
+    if expected_type == "number":
+        return (isinstance(value, int) or isinstance(value, float)) and not isinstance(value, bool)
+    if expected_type == "null":
+        return value is None
+    raise ValueError(f"unsupported schema type: {expected_type}")
+
+
+def validate_with_schema(schema: object, value: object, path: tuple[PathSegment, ...] = ()) -> None:
+    schema_map = require_mapping(schema, f"schema({_path_text(path)})")
+
+    if "oneOf" in schema_map:
+        raw_variants = schema_map.get("oneOf")
+        if not isinstance(raw_variants, list) or not raw_variants:
+            raise ValueError(f"invalid schema at {_path_text(path)}.oneOf")
+        matches = 0
+        for variant in raw_variants:
+            try:
+                validate_with_schema(variant, value, path)
+                matches += 1
+            except ValueError:
+                pass
+        if matches != 1:
+            raise ValueError(f"contract schema validation failed: {_path_text(path)} failed oneOf")
+        return
+
+    raw_type = schema_map.get("type")
+    if isinstance(raw_type, str):
+        if not _type_matches(raw_type, value):
+            raise ValueError(f"contract schema validation failed: {_path_text(path)} has invalid type")
+    elif isinstance(raw_type, list):
+        if not any(isinstance(entry, str) and _type_matches(entry, value) for entry in raw_type):
+            raise ValueError(f"contract schema validation failed: {_path_text(path)} has invalid type")
+
+    if "const" in schema_map and value != schema_map.get("const"):
+        raise ValueError(f"contract schema validation failed: {_path_text(path)} must equal {schema_map.get('const')!r}")
+
+    raw_enum = schema_map.get("enum")
+    if isinstance(raw_enum, list) and value not in raw_enum:
+        raise ValueError(f"contract schema validation failed: {_path_text(path)} must be one of enum values")
+
+    if isinstance(value, str):
+        raw_min_length = schema_map.get("minLength")
+        if isinstance(raw_min_length, int) and len(value) < raw_min_length:
+            raise ValueError(
+                f"contract schema validation failed: {_path_text(path)} must have minLength {raw_min_length}"
+            )
+        raw_pattern = schema_map.get("pattern")
+        if isinstance(raw_pattern, str) and re.fullmatch(raw_pattern, value) is None:
+            raise ValueError(f"contract schema validation failed: {_path_text(path)} failed pattern check")
+
+    if isinstance(value, list):
+        raw_min_items = schema_map.get("minItems")
+        if isinstance(raw_min_items, int) and len(value) < raw_min_items:
+            raise ValueError(
+                f"contract schema validation failed: {_path_text(path)} must have minItems {raw_min_items}"
+            )
+        item_schema = schema_map.get("items")
+        if item_schema is not None:
+            for index, item in enumerate(value):
+                validate_with_schema(item_schema, item, (*path, index))
+
+    if isinstance(value, dict):
+        raw_required = schema_map.get("required")
+        if isinstance(raw_required, list):
+            missing = [key for key in raw_required if isinstance(key, str) and key not in value]
+            if missing:
+                raise ValueError(
+                    f"contract schema validation failed: {_path_text(path)} missing keys: {', '.join(sorted(missing))}"
+                )
+        raw_properties = schema_map.get("properties")
+        properties: Mapping[str, object] = {}
+        if isinstance(raw_properties, dict):
+            properties = cast(Mapping[str, object], raw_properties)
+            for key, prop_schema in properties.items():
+                if key in value:
+                    validate_with_schema(prop_schema, value[key], (*path, key))
+
+        if schema_map.get("additionalProperties") is False:
+            unknown = set(value) - set(properties)
+            if unknown:
+                raise ValueError(
+                    f"contract schema validation failed: {_path_text(path)} has unknown keys: "
+                    + ", ".join(sorted(unknown))
+                )
 
 
 def require_mapping(value: object, name: str) -> Mapping[str, object]:
@@ -159,19 +298,29 @@ def load_integrity_lock(lock_path: Path) -> IntegrityLock:
 
 
 def load_contract_with_integrity_gate(contract_path: Path) -> Contract:
-    return load_contract(contract_path)
+    schema_path = PROJECT_ROOT / CONTRACT_SCHEMA_RELATIVE_PATH
+    try:
+        schema = cast(object, json.loads(schema_path.read_text(encoding="utf-8")))
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"failed to load contract schema: {CONTRACT_SCHEMA_RELATIVE_PATH}") from exc
+    assert_schema_condition_alignment(schema)
+
+    raw_contract = parse_contract_json(contract_path)
+    validate_with_schema(schema, raw_contract)
+
+    return validate_contract(raw_contract)
 
 
 def resolve_repo_contract_path(argv: list[str], repo_root: Path) -> Path:
     if len(argv) != 2:
-        raise ValueError("entry path requires the repo-root workspace.success.yaml argument")
+        raise ValueError("entry path requires the repo-root workspace.success.json argument")
     expected = ensure_within(repo_root, repo_root / REPO_CONTRACT_NAME, name="repo contract")
     provided = Path(argv[1])
     resolved_provided = provided.resolve() if provided.is_absolute() else (Path.cwd() / provided).resolve()
     if resolved_provided != expected:
-        raise ValueError("entry path must use the repo-root workspace.success.yaml")
+        raise ValueError("entry path must use the repo-root workspace.success.json")
     if not expected.exists():
-        raise ValueError("repo-root workspace.success.yaml is missing")
+        raise ValueError("repo-root workspace.success.json is missing")
     return expected
 
 

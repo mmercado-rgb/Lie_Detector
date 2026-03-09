@@ -13,9 +13,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.contract_model import SuccessCondition, load_contract  # noqa: E402
+from src.contract_model import SuccessCondition  # noqa: E402
 from src.evidence import ensure_relative_artifact_path, ensure_within, sha256_bytes, sha256_file  # noqa: E402
-from src.integrity import load_integrity_lock, validate_lock_binding  # noqa: E402
+from src.integrity import (  # noqa: E402
+    load_contract_with_integrity_gate,
+    load_integrity_lock,
+    validate_lock_binding,
+)
 
 
 class ManifestEntry(TypedDict):
@@ -443,7 +447,7 @@ def verify_workspace(repo_root: Path, contract_path: Path) -> int:
     }
 
     try:
-        contract = load_contract(contract_path)
+        contract = load_contract_with_integrity_gate(contract_path)
         lock_path = repo_root / ".truth" / "lock.json"
         if lock_path.exists():
             lock = load_integrity_lock(lock_path)

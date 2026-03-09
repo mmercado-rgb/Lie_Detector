@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -15,10 +16,10 @@ def main(argv: list[str]) -> int:
         print("INVALID")
         return 1
 
+    contract_path = Path(argv[1]).resolve()
     try:
-        contract_path = Path(argv[1]).resolve()
         _ = load_contract_with_integrity_gate(contract_path)
-    except ValueError:
+    except Exception:  # noqa: BLE001
         print("INVALID")
         return 1
 

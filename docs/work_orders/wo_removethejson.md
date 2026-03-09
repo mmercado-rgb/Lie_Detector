@@ -19,15 +19,15 @@ src/contract_model.py
 tests/test_preflight.py
 tests/test_run_agent.py
 ACCEPTANCE CRITERIA
-1. a schema-valid workspace.success.yaml can pass preflight without requiring .truth/lock.json
+1. a schema-valid workspace.success.json can pass preflight without requiring .truth/lock.json
 2. invalid contracts still cause preflight to print INVALID and exit nonzero
 3. invalid contracts still cause run_agent.py to exit nonzero
 4. invalid contracts still cause run_agent.py to create no fresh executor artifacts
 5. no lock-file dependency remains
 EXACT COMMANDS TO RUN
 rm -rf .artifacts/*
-python scripts/preflight.py workspace.success.yaml; echo $?
-python scripts/run_agent.py workspace.success.yaml; echo $?
+python scripts/preflight.py workspace.success.json; echo $?
+python scripts/run_agent.py workspace.success.json; echo $?
 find .artifacts -maxdepth 2 -type f | sort
 OUTPUT FORMAT
 Return only:

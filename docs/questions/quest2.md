@@ -1,14 +1,14 @@
 The workspace now runs as follows:
 
-python scripts/preflight.py workspace.success.yaml → VALID
-python scripts/run_agent.py workspace.success.yaml → executes and writes artifacts
-python scripts/verify.py workspace.success.yaml → FAIL
+python scripts/preflight.py workspace.success.json → VALID
+python scripts/run_agent.py workspace.success.json → executes and writes artifacts
+python scripts/verify.py workspace.success.json → FAIL
 
 No tampering has occurred.
 
 Please inspect:
 .artifacts/verify_result.json
-workspace.success.yaml
+workspace.success.json
 scripts/verify.py
 .artifacts/tests-pass.exitcode.txt
 .artifacts/lint-pass.exitcode.txt

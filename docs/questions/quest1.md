@@ -6,7 +6,7 @@ Your task is to add repository-controlled integrity binding for the real workspa
 
 OBJECTIVE
 Treat the repository root as the only real workspace authority and make any weakening of these files or mechanisms detectable:
-- `workspace.success.yaml`
+- `workspace.success.json`
 - `scripts/verify.py`
 - verifier-run black-box probe scripts used by the real contract
 - the real workflow task chain itself
@@ -21,13 +21,13 @@ Implement one narrow layer of hardening, not a redesign:
 
 REQUIRED CONTROLS
 1. Add a repository-controlled lock file, for example `.truth/lock.json`, that records at minimum:
-   - sha256 of `workspace.success.yaml`
+   - sha256 of `workspace.success.json`
    - sha256 of `scripts/verify.py`
    - sha256 of each real black-box probe script referenced by the repo-root contract
    - the exact command strings for verifier-run conditions from the repo-root contract
    - the expected executable path or command resolution policy for critical commands
 2. Add a pre-verification integrity check that recomputes those hashes from disk and fails closed on any mismatch.
-3. Make the real entry path load only the repo-root `workspace.success.yaml` as the workspace contract.
+3. Make the real entry path load only the repo-root `workspace.success.json` as the workspace contract.
 4. Make verifier-run black-box conditions fail if they are not backed by repo-tracked probe files listed in the lock file.
 5. Detect command-resolution drift for critical commands used by the real workflow.
    Accept a minimal implementation such as:
@@ -36,7 +36,7 @@ REQUIRED CONTROLS
 6. Add a real-workflow coverage test that exercises the repository root contract and fails if the real contract or real verifier is bypassed.
 
 FILES TO CHANGE
-- `workspace.success.yaml`
+- `workspace.success.json`
 - `scripts/preflight.py`
 - `scripts/run_agent.py`
 - `scripts/verify.py`
@@ -48,9 +48,9 @@ FILES TO CHANGE
 
 FAIL-CLOSED REQUIREMENTS
 Verification must return `FAIL` if any of the following happen:
-1. repo-root `workspace.success.yaml` is missing
+1. repo-root `workspace.success.json` is missing
 2. lock file is missing
-3. lock file hash for `workspace.success.yaml` mismatches
+3. lock file hash for `workspace.success.json` mismatches
 4. lock file hash for `scripts/verify.py` mismatches
 5. a real verifier-run probe file is missing or modified
 6. a verifier-run command in the repo-root contract differs from the locked command
@@ -61,10 +61,10 @@ Verification must return `FAIL` if any of the following happen:
 
 TESTING REQUIREMENTS
 Add focused tests for:
-1. lock file mismatch on `workspace.success.yaml` causes verification failure
+1. lock file mismatch on `workspace.success.json` causes verification failure
 2. verifier script hash mismatch causes verification failure
 3. black-box probe file modification causes verification failure
-4. repo-root workflow fails if `workspace.success.yaml` is absent
+4. repo-root workflow fails if `workspace.success.json` is absent
 5. repo-root workflow fails if `scripts/verify.py` is modified without updating the lock
 6. a real workflow integration test proves the root contract, executor, and verifier path work together
 7. temp-contract unit tests may remain, but they must not be the only coverage of the real workspace path

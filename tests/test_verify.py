@@ -228,3 +228,61 @@ def test_verify_fails_on_replayed_artifacts_bundle(tmp_path, capsys, monkeypatch
     assert captured.out.strip() == "FAIL"
     assert result_payload["status"] == "FAIL"
     assert result_payload["reasons"] == ["evidence run_id does not match freshness marker"]
+
+def test_verify_fails_on_undeclared_extra_artifact(tmp_path, capsys, monkeypatch) -> None:
+    build_sample_workspace(tmp_path)
+    contract_path = write_contract(
+        tmp_path,
+        success_conditions=[
+            {
+                "id": "exec-check",
+                "type": "command_stdout_contains",
+                "command": 'python -c "print(\'ALPHA\')"',
+                "contains": "ALPHA",
+            }
+        ],
+        require_black_box_verification=False,
+    )
+
+    monkeypatch.chdir(tmp_path)
+    assert run_agent_main(["run_agent.py", str(contract_path)]) == 0
+    _ = capsys.readouterr()
+
+    write_file(tmp_path / ".artifacts" / "unexpected.txt", "x\n")
+
+    from scripts.verify import main as verify_main
+    exit_code = verify_main(["verify.py", str(contract_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code != 0
+    assert "FAIL" in captured.out
+
+def test_verify_fails_if_contract_changes_after_run(tmp_path, capsys, monkeypatch) -> None:
+    build_sample_workspace(tmp_path)
+    contract_path = write_contract(
+        tmp_path,
+        success_conditions=[
+            {
+                "id": "exec-check",
+                "type": "command_stdout_contains",
+                "command": 'python -c "print(\'ALPHA\')"',
+                "contains": "ALPHA",
+            }
+        ],
+        require_black_box_verification=False,
+    )
+
+    monkeypatch.chdir(tmp_path)
+    assert run_agent_main(["run_agent.py", str(contract_path)]) == 0
+    _ = capsys.readouterr()
+
+    payload = json.loads(contract_path.read_text(encoding="utf-8"))
+    payload["goal"] = "mutated after execution"
+    write_file(contract_path, json.dumps(payload, indent=2) + "\n")
+
+    from scripts.verify import main as verify_main
+    exit_code = verify_main(["verify.py", str(contract_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code != 0
+    assert "FAIL" in captured.out

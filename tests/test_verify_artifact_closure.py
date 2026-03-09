@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -12,37 +13,38 @@ VERIFY = ROOT / "scripts" / "verify.py"
 PYTHON = Path(sys.executable).as_posix()
 
 
-WORKSPACE_YAML = f"""\
-version: 2
-task_id: "exp-unauthorized-artifact"
-goal: "Minimal verify injection test"
-inputs:
-  repo_root: "."
-  allowed_paths:
-    - "src/**"
-    - "tests/**"
-    - "scripts/**"
-success_conditions:
-  - id: "echo-ok"
-    type: "command_stdout_contains"
-    command: "{PYTHON} -c \\"print('HELLO')\\""
-    contains: "HELLO"
-evidence:
-  output_dir: ".artifacts"
-  save_stdout: true
-  save_stderr: true
-  save_exit_codes: true
-  hash_algorithm: "sha256"
-  freshness_path: ".truth/latest_run_id.txt"
-policy:
-  fail_closed: true
-  executor_cannot_claim_success: true
-  verifier_is_final_authority: true
-  require_black_box_verification: false
-  reserved_outcome_words:
-    - "PASS"
-    - "FAIL"
-"""
+WORKSPACE_CONTRACT = {
+    "version": 2,
+    "task_id": "exp-unauthorized-artifact",
+    "goal": "Minimal verify injection test",
+    "inputs": {
+        "repo_root": ".",
+        "allowed_paths": ["src/**", "tests/**", "scripts/**"],
+    },
+    "success_conditions": [
+        {
+            "id": "echo-ok",
+            "type": "command_stdout_contains",
+            "command": f"{PYTHON} -c \"print('HELLO')\"",
+            "contains": "HELLO",
+        }
+    ],
+    "evidence": {
+        "output_dir": ".artifacts",
+        "save_stdout": True,
+        "save_stderr": True,
+        "save_exit_codes": True,
+        "hash_algorithm": "sha256",
+        "freshness_path": ".truth/latest_run_id.txt",
+    },
+    "policy": {
+        "fail_closed": True,
+        "executor_cannot_claim_success": True,
+        "verifier_is_final_authority": True,
+        "require_black_box_verification": False,
+        "reserved_outcome_words": ["PASS", "FAIL"],
+    },
+}
 
 
 def run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -56,8 +58,8 @@ def run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 def test_preflight_accepts_valid_contract(tmp_path: Path) -> None:
-    contract_path = tmp_path / "workspace.success.yaml"
-    contract_path.write_text(WORKSPACE_YAML, encoding="utf-8")
+    contract_path = tmp_path / "workspace.success.json"
+    contract_path.write_text(json.dumps(WORKSPACE_CONTRACT, indent=2) + "\n", encoding="utf-8")
 
     result = run([sys.executable, str(PREFLIGHT), str(contract_path)], cwd=ROOT)
     output = result.stdout + "\n" + result.stderr
@@ -66,8 +68,8 @@ def test_preflight_accepts_valid_contract(tmp_path: Path) -> None:
 
 
 def test_verify_passes_on_clean_artifacts(tmp_path: Path) -> None:
-    contract_path = tmp_path / "workspace.success.yaml"
-    contract_path.write_text(WORKSPACE_YAML, encoding="utf-8")
+    contract_path = tmp_path / "workspace.success.json"
+    contract_path.write_text(json.dumps(WORKSPACE_CONTRACT, indent=2) + "\n", encoding="utf-8")
 
     run_agent = run([sys.executable, str(RUN_AGENT), str(contract_path)], cwd=ROOT)
     run_agent_out = run_agent.stdout + "\n" + run_agent.stderr
@@ -80,8 +82,8 @@ def test_verify_passes_on_clean_artifacts(tmp_path: Path) -> None:
 
 
 def test_verify_fails_on_extra_artifact(tmp_path: Path) -> None:
-    contract_path = tmp_path / "workspace.success.yaml"
-    contract_path.write_text(WORKSPACE_YAML, encoding="utf-8")
+    contract_path = tmp_path / "workspace.success.json"
+    contract_path.write_text(json.dumps(WORKSPACE_CONTRACT, indent=2) + "\n", encoding="utf-8")
 
     run_agent = run([sys.executable, str(RUN_AGENT), str(contract_path)], cwd=ROOT)
     run_agent_out = run_agent.stdout + "\n" + run_agent.stderr
@@ -104,8 +106,8 @@ def test_verify_fails_on_extra_artifact(tmp_path: Path) -> None:
 
 
 def test_verify_fails_when_indexed_artifact_missing(tmp_path: Path) -> None:
-    contract_path = tmp_path / "workspace.success.yaml"
-    contract_path.write_text(WORKSPACE_YAML, encoding="utf-8")
+    contract_path = tmp_path / "workspace.success.json"
+    contract_path.write_text(json.dumps(WORKSPACE_CONTRACT, indent=2) + "\n", encoding="utf-8")
 
     run_agent = run([sys.executable, str(RUN_AGENT), str(contract_path)], cwd=ROOT)
     run_agent_out = run_agent.stdout + "\n" + run_agent.stderr
@@ -122,3 +124,5 @@ def test_verify_fails_when_indexed_artifact_missing(tmp_path: Path) -> None:
 
     assert result.returncode != 0, output
     assert "FAIL" in output, output
+
+    

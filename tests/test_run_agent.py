@@ -118,11 +118,9 @@ def test_run_agent_refuses_invalid_contract_and_writes_no_artifacts(
             },
         ],
     )
-    original = contract_path.read_text(encoding="utf-8")
-    write_file(
-        contract_path,
-        original.replace("policy:\n", "policy:\n  extra: true\n", 1),
-    )
+    payload = json.loads(contract_path.read_text(encoding="utf-8"))
+    payload["policy"]["extra"] = True
+    write_file(contract_path, json.dumps(payload, indent=2) + "\n")
 
     output_dir = tmp_path / ".artifacts"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -142,3 +140,48 @@ def test_run_agent_refuses_invalid_contract_and_writes_no_artifacts(
     assert before_files == {".gitkeep"}
     assert after_files == before_files
     assert not (tmp_path / "unexpected.txt").exists()
+
+def test_run_agent_blocks_outside_workspace_write_attempt(tmp_path, capsys, monkeypatch) -> None:
+    build_sample_workspace(tmp_path)
+    contract_path = write_contract(
+        tmp_path,
+        success_conditions=[
+            {
+                "id": "escape-attempt",
+                "type": "command_exit_zero",
+                "command": 'python -c "from pathlib import Path; Path(\'../escape.txt\').write_text(\'x\', encoding=\'utf-8\')"',
+            }
+        ],
+    )
+
+    monkeypatch.chdir(tmp_path)
+    exit_code = run_agent_main(["run_agent.py", str(contract_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code != 0
+    assert captured.out.strip() == "execution error"
+    assert not (tmp_path.parent / "escape.txt").exists()
+    assert not (tmp_path / ".artifacts" / "execution_manifest.json").exists()
+
+def test_run_agent_blocks_absolute_outside_write_attempt(tmp_path, capsys, monkeypatch) -> None:
+    build_sample_workspace(tmp_path)
+    outside_path = tmp_path.parent / "tmp_escape.txt"
+    contract_path = write_contract(
+        tmp_path,
+        success_conditions=[
+            {
+                "id": "absolute-escape-attempt",
+                "type": "command_exit_zero",
+                "command": f'python -c "from pathlib import Path; Path(r\'{outside_path}\').write_text(\'x\', encoding=\'utf-8\')"',
+            }
+        ],
+    )
+
+    monkeypatch.chdir(tmp_path)
+    exit_code = run_agent_main(["run_agent.py", str(contract_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code != 0
+    assert captured.out.strip() == "execution error"
+    assert not outside_path.exists()
+

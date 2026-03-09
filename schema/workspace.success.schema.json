@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/workspace-success.schema.json",
+  "title": "Workspace Success Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "task_id",
+    "goal",
+    "inputs",
+    "success_conditions",
+    "evidence",
+    "policy"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 2
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo_root", "allowed_paths"],
+      "properties": {
+        "repo_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "success_conditions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "type", "command"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "const": "command_exit_zero"
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "type", "path"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "const": "file_exists"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "type", "command", "contains"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "const": "verifier_stdout_contains"
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "contains": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "type", "command", "contains"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "const": "command_stdout_contains"
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "contains": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        ]
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "output_dir",
+        "save_stdout",
+        "save_stderr",
+        "save_exit_codes",
+        "hash_algorithm",
+        "freshness_path"
+      ],
+      "properties": {
+        "output_dir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "save_stdout": {
+          "type": "boolean"
+        },
+        "save_stderr": {
+          "type": "boolean"
+        },
+        "save_exit_codes": {
+          "type": "boolean"
+        },
+        "hash_algorithm": {
+          "type": "string",
+          "enum": ["sha256"]
+        },
+        "freshness_path": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fail_closed",
+        "executor_cannot_claim_success",
+        "verifier_is_final_authority",
+        "require_black_box_verification",
+        "reserved_outcome_words"
+      ],
+      "properties": {
+        "fail_closed": {
+          "type": "boolean"
+        },
+        "executor_cannot_claim_success": {
+          "type": "boolean"
+        },
+        "verifier_is_final_authority": {
+          "type": "boolean"
+        },
+        "require_black_box_verification": {
+          "type": "boolean"
+        },
+        "reserved_outcome_words": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

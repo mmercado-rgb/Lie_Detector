@@ -22,7 +22,7 @@ But run_agent.py determines repo_root using:
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-So the agent assumes the repository root is where the code lives rather than the workspace containing workspace.success.yaml.
+So the agent assumes the repository root is where the code lives rather than the workspace containing workspace.success.json.
 
 This causes run_agent to fail when tests run in tmp_path.
 
@@ -30,7 +30,7 @@ Task:
 Modify run_agent.py so the workspace root is derived from the contract path instead of the script location.
 
 Expected behavior:
-repo_root should resolve to the directory containing workspace.success.yaml so run_agent works inside temporary test workspaces.
+repo_root should resolve to the directory containing workspace.success.json so run_agent works inside temporary test workspaces.
 
 Goal:
 Make run_agent_main(["run_agent.py", contract_path]) succeed inside pytest tmp_path environments and return 0 when execution succeeds.

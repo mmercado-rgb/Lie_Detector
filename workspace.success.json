@@ -1,0 +1,59 @@
+{
+  "version": 2,
+  "task_id": "hardening-001",
+  "goal": "Implement requested change without regressions",
+  "inputs": {
+    "repo_root": ".",
+    "allowed_paths": [
+      "src/**",
+      "tests/**",
+      "scripts/**"
+    ]
+  },
+  "success_conditions": [
+    {
+      "id": "tests-pass",
+      "type": "command_exit_zero",
+      "command": "python -m pytest -q"
+    },
+    {
+      "id": "lint-pass",
+      "type": "command_exit_zero",
+      "command": "python -m ruff check ."
+    },
+    {
+      "id": "required-file",
+      "type": "file_exists",
+      "path": "src/app.py"
+    },
+    {
+      "id": "smoke-black-box",
+      "type": "verifier_stdout_contains",
+      "command": "python scripts/smoke.py",
+      "contains": "OK"
+    }
+  ],
+  "evidence": {
+    "output_dir": ".artifacts",
+    "save_stdout": true,
+    "save_stderr": true,
+    "save_exit_codes": true,
+    "hash_algorithm": "sha256",
+    "freshness_path": ".truth/latest_run_id.txt"
+  },
+  "policy": {
+    "fail_closed": true,
+    "executor_cannot_claim_success": true,
+    "verifier_is_final_authority": true,
+    "require_black_box_verification": true,
+    "reserved_outcome_words": [
+      "PASS",
+      "FAIL",
+      "passed",
+      "verified",
+      "complete",
+      "ready",
+      "successful"
+    ]
+  }
+}

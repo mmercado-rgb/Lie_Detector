@@ -32,7 +32,7 @@ NON-NEGOTIABLE RULES
 5. Missing or malformed run binding must fail closed.
 6. Replayed stale evidence from a prior run under the same contract must fail.
 FILES IN SCOPE
-workspace.success.yaml
+workspace.success.json
 src/contract_model.py
 scripts/run_agent.py
 scripts/verify.py

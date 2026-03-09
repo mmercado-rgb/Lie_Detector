@@ -15,7 +15,7 @@ CURRENT TRUTH GAPS TO CLOSE
 1. `scripts/verify.py` trusts executor-written manifest fields without proving they still match the contract.
 2. Evidence files are not integrity-bound to the contract or to one another; they can be edited after execution with no hash mismatch.
 3. Command-based conditions are effectively executor-reported because the verifier only reads recorded artifacts instead of independently re-running at least one declared check.
-4. Contract parsing accepts too much ambiguity: duplicate YAML keys can collapse silently, unknown fields are not rejected, and path/command shape is not strict enough.
+4. Contract parsing accepts too much ambiguity: duplicate JSON keys can collapse silently, unknown fields are not rejected, and path/command shape is not strict enough.
 5. Tests do not currently cover executor/verifier boundary failures, reserved language enforcement, or tampered evidence.
 
 SCOPE
@@ -30,7 +30,7 @@ Change only the minimum code and contract structure required to harden:
 Do not add UI, services, network calls, databases, telemetry, background daemons, agent autonomy, or policy systems unrelated to truth-bound verification.
 
 REQUIRED FILES TO CHANGE
-workspace.success.yaml
+workspace.success.json
 src/contract_model.py
 scripts/preflight.py
 scripts/run_agent.py
@@ -54,11 +54,11 @@ NON-NEGOTIABLE RULES
 8. Evidence and verification artifacts must stay under `.artifacts/`.
 
 CONTRACT CHANGES
-Upgrade `workspace.success.yaml` to `version: 2` and extend the schema with the minimum fields needed for independent verification and evidence integrity.
+Upgrade `workspace.success.json` to `version: 2` and extend the schema with the minimum fields needed for independent verification and evidence integrity.
 
 Required top-level structure:
 
-```yaml
+```json
 version: 2
 task_id: hardening-001
 goal: "Implement requested change without regressions"
@@ -103,7 +103,7 @@ policy:
 SCHEMA REQUIREMENTS
 1. Reject unknown top-level keys.
 2. Reject unknown keys inside `inputs`, `success_conditions`, `evidence`, and `policy`.
-3. Reject duplicate YAML keys instead of silently keeping the last value.
+3. Reject duplicate JSON keys instead of silently keeping the last value.
 4. Reject empty strings, multiline commands, relative escape paths, absolute paths outside repo scope, and condition ids that are not stable slug-like identifiers.
 5. Supported condition types for v2:
    - `command_exit_zero`
@@ -118,7 +118,7 @@ IMPLEMENTATION REQUIREMENTS
 
 `src/contract_model.py`
 - Enforce the v2 schema exactly, including unknown-key rejection.
-- Detect duplicate YAML keys during parse.
+- Detect duplicate JSON keys during parse.
 - Add typed support for verifier-run condition types.
 - Validate `reserved_outcome_words` as a non-empty string list.
 - Validate `hash_algorithm` and support only `sha256` for this version.
@@ -185,11 +185,11 @@ Verification must return `FAIL` if any of the following occur:
 5. Any verifier-run condition is missing, unsupported, or not measurable.
 6. Any artifact path leaves `.artifacts/`.
 7. Any required evidence file is missing.
-8. Any unknown contract key or malformed YAML structure is present.
+8. Any unknown contract key or malformed JSON structure is present.
 
 TESTING
 Add or update focused tests for:
-1. duplicate YAML keys are rejected
+1. duplicate JSON keys are rejected
 2. unknown schema keys are rejected
 3. reserved outcome words are rejected from executor-authored output/metadata
 4. `run_agent.py` writes contract-bound hashes and evidence index files
@@ -221,9 +221,9 @@ This work order is complete only if:
 
 EXACT COMMANDS TO RUN
 ```powershell
-python scripts/preflight.py workspace.success.yaml
-python scripts/run_agent.py workspace.success.yaml
-python scripts/verify.py workspace.success.yaml
+python scripts/preflight.py workspace.success.json
+python scripts/run_agent.py workspace.success.json
+python scripts/verify.py workspace.success.json
 python -m pytest -q
 ```
 

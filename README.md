@@ -4,7 +4,7 @@ This workspace uses a contract-first flow:
 
 Contract -> Execution -> Evidence -> Independent Verification -> Final Verdict
 
-`workspace.success.yaml` is the only declared source of measurable success. The contract is loaded before execution and bound to evidence with a `sha256` digest.
+`workspace.success.json` is the only declared source of measurable success. The contract is loaded before execution and bound to evidence with a `sha256` digest.
 
 `scripts/run_agent.py` executes only executor-run command conditions. It writes raw stdout, stderr, exit codes, metadata, `execution_manifest.json`, and `evidence_index.json` under `.artifacts/`, then updates the freshness marker file declared by `evidence.freshness_path`. It does not decide task outcome and it does not run verifier-only checks.
 
@@ -21,8 +21,8 @@ Only `scripts/verify.py` may emit the final `PASS` or `FAIL`.
 ## Commands
 
 ```powershell
-python scripts/preflight.py workspace.success.yaml
-python scripts/run_agent.py workspace.success.yaml
-python scripts/verify.py workspace.success.yaml
+python scripts/preflight.py workspace.success.json
+python scripts/run_agent.py workspace.success.json
+python scripts/verify.py workspace.success.json
 python -m pytest -q
 ```

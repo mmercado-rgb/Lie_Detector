@@ -4,8 +4,8 @@ Close the execution-gate bypass so an invalid contract cannot produce fresh exec
 ONE-LINE INTENT
 Make scripts/run_agent.py hard-refuse invalid contracts before any execution or artifact creation.
 OBSERVED DEFECT
-python scripts/preflight.py workspace.success.yaml prints INVALID and exits nonzero
-python scripts/run_agent.py workspace.success.yaml still executes declared executor-run conditions, writes fresh artifacts under .artifacts, and exits 0
+python scripts/preflight.py workspace.success.json prints INVALID and exits nonzero
+python scripts/run_agent.py workspace.success.json still executes declared executor-run conditions, writes fresh artifacts under .artifacts, and exits 0
 REQUIRED CHANGE
 1. scripts/run_agent.py must load and validate the contract before doing any execution work
 2. if contract validation fails, run_agent.py must exit nonzero
@@ -43,14 +43,14 @@ Observed live behavior:
   .artifacts/tests-pass.stderr.txt
   .artifacts/tests-pass.stdout.txt
 ACCEPTANCE CRITERIA
-1. python scripts/preflight.py workspace.success.yaml on an invalid contract prints INVALID and exits nonzero
-2. python scripts/run_agent.py workspace.success.yaml on the same invalid contract exits nonzero
+1. python scripts/preflight.py workspace.success.json on an invalid contract prints INVALID and exits nonzero
+2. python scripts/run_agent.py workspace.success.json on the same invalid contract exits nonzero
 3. run_agent.py on an invalid contract creates no fresh executor-authored artifacts
 4. valid-contract behavior remains unchanged
 EXACT COMMANDS TO RUN
 rm -rf .artifacts/*
-python scripts/preflight.py workspace.success.yaml; echo $?
-python scripts/run_agent.py workspace.success.yaml; echo $?
+python scripts/preflight.py workspace.success.json; echo $?
+python scripts/run_agent.py workspace.success.json; echo $?
 find .artifacts -maxdepth 2 -type f | sort
 python -m pytest -q
 OUTPUT FORMAT
