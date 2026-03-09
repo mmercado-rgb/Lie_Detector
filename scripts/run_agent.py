@@ -6,13 +6,15 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
+from uuid import uuid4
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.contract_model import SuccessCondition, load_contract  # noqa: E402
+from src.contract_model import SuccessCondition  # noqa: E402
 from src.evidence import contains_reserved_word, ensure_within, sha256_bytes, sha256_file  # noqa: E402
+from src.integrity import load_contract_with_integrity_gate  # noqa: E402
 
 
 class ManifestEntry(TypedDict):
@@ -20,6 +22,7 @@ class ManifestEntry(TypedDict):
     type: str
     command: str
     timestamp: str
+    run_id: str
     contract_sha256: str
     stdout_path: str
     stderr_path: str
@@ -30,6 +33,7 @@ class ManifestEntry(TypedDict):
 
 class EvidenceIndex(TypedDict):
     contract_sha256: str
+    run_id: str
     hash_algorithm: str
     artifacts: dict[str, str]
 
@@ -84,18 +88,12 @@ def iter_executor_conditions(conditions: list[SuccessCondition]) -> list[Success
     return [condition for condition in conditions if condition.is_executor_run()]
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("execution requires a contract path")
-        return 2
-
-    repo_root = Path.cwd().resolve()
-
+def run_agent(repo_root: Path, contract_path: Path) -> int:
     try:
-        contract_path = Path(argv[1]).resolve()
-        contract = load_contract(contract_path)
+        contract = load_contract_with_integrity_gate(contract_path)
         output_dir = ensure_output_dir(repo_root, contract.evidence.output_dir)
         contract_sha256 = sha256_bytes(contract_path.read_bytes())
+        run_id = uuid4().hex
         reserved_words = contract.policy.reserved_outcome_words
     except Exception:  # noqa: BLE001
         print("execution error")
@@ -124,6 +122,7 @@ def main(argv: list[str]) -> int:
                 "type": condition.type,
                 "command": condition.require_command(),
                 "timestamp": started_at,
+                "run_id": run_id,
                 "contract_sha256": contract_sha256,
             }
             meta_hash = write_json(meta_path, meta_payload, reserved_words=reserved_words)
@@ -145,6 +144,7 @@ def main(argv: list[str]) -> int:
                 type=condition.type,
                 command=condition.require_command(),
                 timestamp=started_at,
+                run_id=run_id,
                 contract_sha256=contract_sha256,
                 stdout_path=stdout_path.name,
                 stderr_path=stderr_path.name,
@@ -161,16 +161,34 @@ def main(argv: list[str]) -> int:
         index_path = output_dir / "evidence_index.json"
         evidence_index: EvidenceIndex = {
             "contract_sha256": contract_sha256,
+            "run_id": run_id,
             "hash_algorithm": contract.evidence.hash_algorithm,
             "artifacts": artifact_index,
         }
         _ = write_json(index_path, evidence_index, reserved_words=reserved_words)
+
+        freshness_path = ensure_within(
+            repo_root,
+            repo_root / contract.evidence.freshness_path,
+            name="evidence.freshness_path",
+        )
+        freshness_path.parent.mkdir(parents=True, exist_ok=True)
+        write_text(freshness_path, f"{run_id}\n")
     except Exception:  # noqa: BLE001
         print("execution error")
         return 2
 
     emit_executor_line(f"collected evidence in {output_dir}", reserved_words)
     return 0
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 2:
+        print("execution requires a contract path")
+        return 2
+    contract_path = Path(argv[1]).resolve()
+    repo_root = contract_path.parent
+    return run_agent(repo_root, contract_path)
 
 
 if __name__ == "__main__":

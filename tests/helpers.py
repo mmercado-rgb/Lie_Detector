@@ -29,6 +29,7 @@ def write_contract(
     *,
     success_conditions: list[dict[str, str]],
     output_dir: str = ".artifacts",
+    freshness_path: str = ".truth/latest_run_id.txt",
     require_black_box_verification: bool = True,
     reserved_outcome_words: list[str] | None = None,
 ) -> Path:
@@ -64,6 +65,7 @@ def write_contract(
             "  save_stderr: true",
             "  save_exit_codes: true",
             '  hash_algorithm: "sha256"',
+            f"  freshness_path: {yaml_quote(freshness_path)}",
             "policy:",
             "  fail_closed: true",
             "  executor_cannot_claim_success: true",

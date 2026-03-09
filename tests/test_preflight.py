@@ -35,6 +35,7 @@ def test_validate_contract_rejects_unknown_condition_type() -> None:
             "save_stderr": True,
             "save_exit_codes": True,
             "hash_algorithm": "sha256",
+            "freshness_path": ".truth/latest_run_id.txt",
         },
         "policy": {
             "fail_closed": True,
@@ -83,6 +84,7 @@ def test_load_contract_rejects_duplicate_yaml_keys(tmp_path) -> None:
                 "  save_stderr: true",
                 "  save_exit_codes: true",
                 '  hash_algorithm: "sha256"',
+                '  freshness_path: ".truth/latest_run_id.txt"',
                 "policy:",
                 "  fail_closed: true",
                 "  executor_cannot_claim_success: true",
@@ -124,3 +126,26 @@ def test_preflight_rejects_unknown_schema_keys(tmp_path, capsys, monkeypatch) ->
 
     assert exit_code == 1
     assert captured.out.strip() == "INVALID"
+
+
+def test_preflight_accepts_valid_contract_without_lock_file(tmp_path, capsys, monkeypatch) -> None:
+    build_sample_workspace(tmp_path)
+    write_file(tmp_path / "scripts/black_box.py", "print('OK')\n")
+    contract_path = write_contract(
+        tmp_path,
+        success_conditions=[
+            {
+                "id": "smoke-check",
+                "type": "verifier_stdout_contains",
+                "command": "python scripts/black_box.py",
+                "contains": "OK",
+            }
+        ],
+    )
+
+    monkeypatch.chdir(tmp_path)
+    exit_code = preflight_main(["preflight.py", str(contract_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured.out.strip() == "VALID"

@@ -1,0 +1,4 @@
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+allow_login_shell = false
+web_search = "disabled"

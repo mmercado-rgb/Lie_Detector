@@ -21,3 +21,7 @@ tmp_*.success.yaml
 .DS_Store
 Thumbs.db
 .vscode/*.log
+
+.tmp/
+.cache/
+.localappdata/

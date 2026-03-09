@@ -1,0 +1,46 @@
+{
+  "name": "Lie_Detector Dev Container",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/${localWorkspaceFolderBasename},type=bind",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "remoteUser": "vscode",
+  "overrideCommand": true,
+  "updateRemoteUserUID": true,
+  "containerEnv": {
+    "TEMP": "/workspaces/${localWorkspaceFolderBasename}/.tmp",
+    "TMP": "/workspaces/${localWorkspaceFolderBasename}/.tmp",
+    "TMPDIR": "/workspaces/${localWorkspaceFolderBasename}/.tmp",
+    "LOCALAPPDATA": "/workspaces/${localWorkspaceFolderBasename}/.localappdata",
+    "PYTHONPYCACHEPREFIX": "/workspaces/${localWorkspaceFolderBasename}/.cache/pyc",
+    "MYPY_CACHE_DIR": "/workspaces/${localWorkspaceFolderBasename}/.cache/mypy",
+    "PIP_CACHE_DIR": "/workspaces/${localWorkspaceFolderBasename}/.cache/pip",
+    "PYTEST_ADDOPTS": "--basetemp=/workspaces/${localWorkspaceFolderBasename}/.tmp/pytest"
+  },
+  "postCreateCommand": "mkdir -p .tmp .cache/pyc .cache/mypy .cache/pip .localappdata && python -m venv .venv && . .venv/bin/activate && python -m pip install --upgrade pip && if [ -f requirements.txt ]; then pip install -r requirements.txt; fi && if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi && if [ -f pyproject.toml ]; then pip install -e . || true; fi",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/workspaces/${localWorkspaceFolderBasename}/.venv/bin/python",
+        "python.terminal.activateEnvironment": true,
+        "terminal.integrated.cwd": "/workspaces/${localWorkspaceFolderBasename}",
+        "terminal.integrated.env.linux": {
+          "TEMP": "/workspaces/${localWorkspaceFolderBasename}/.tmp",
+          "TMP": "/workspaces/${localWorkspaceFolderBasename}/.tmp",
+          "TMPDIR": "/workspaces/${localWorkspaceFolderBasename}/.tmp",
+          "LOCALAPPDATA": "/workspaces/${localWorkspaceFolderBasename}/.localappdata",
+          "PYTHONPYCACHEPREFIX": "/workspaces/${localWorkspaceFolderBasename}/.cache/pyc",
+          "MYPY_CACHE_DIR": "/workspaces/${localWorkspaceFolderBasename}/.cache/mypy",
+          "PIP_CACHE_DIR": "/workspaces/${localWorkspaceFolderBasename}/.cache/pip"
+        }
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff"
+      ]
+    }
+  }
+}

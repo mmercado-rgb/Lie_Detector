@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import re
+import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,7 +39,14 @@ REQUIRED_TOP_LEVEL_KEYS: Final[frozenset[str]] = frozenset(
 )
 INPUT_KEYS: Final[frozenset[str]] = frozenset({"repo_root", "allowed_paths"})
 EVIDENCE_KEYS: Final[frozenset[str]] = frozenset(
-    {"output_dir", "save_stdout", "save_stderr", "save_exit_codes", "hash_algorithm"}
+    {
+        "output_dir",
+        "save_stdout",
+        "save_stderr",
+        "save_exit_codes",
+        "hash_algorithm",
+        "freshness_path",
+    }
 )
 POLICY_KEYS: Final[frozenset[str]] = frozenset(
     {
@@ -73,6 +81,7 @@ class Evidence:
     save_stderr: bool
     save_exit_codes: bool
     hash_algorithm: str
+    freshness_path: str
 
 
 @dataclass(frozen=True)
@@ -367,6 +376,26 @@ def require_command(value: object, name: str, verifier_run: bool) -> str:
     return command
 
 
+def split_command_tokens(command: str, name: str) -> list[str]:
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError as exc:
+        raise ValueError(f"{name} is not shell-parseable") from exc
+    if not tokens:
+        raise ValueError(f"{name} must contain at least one token")
+    return tokens
+
+
+def extract_python_script_path(command: str, name: str) -> str:
+    tokens = split_command_tokens(command, name)
+    executable_name = Path(tokens[0]).name.lower()
+    if executable_name not in {"python", "python.exe"}:
+        raise ValueError(f"{name} must invoke a python probe script")
+    if len(tokens) < 2 or tokens[1] in {"-c", "-m"}:
+        raise ValueError(f"{name} must reference a repo probe script")
+    return normalize_relative_text(tokens[1], name, allow_glob=False)
+
+
 def require_string_list(value: object, name: str) -> list[str]:
     raw_list = require_non_empty_list(value, name)
     parsed = [require_non_empty_string(item, f"{name}[{index}]") for index, item in enumerate(raw_list)]
@@ -402,6 +431,7 @@ def parse_evidence(evidence_value: object) -> Evidence:
         save_stderr=require_bool(evidence.get("save_stderr"), "evidence.save_stderr"),
         save_exit_codes=require_bool(evidence.get("save_exit_codes"), "evidence.save_exit_codes"),
         hash_algorithm=hash_algorithm,
+        freshness_path=require_repo_relative_path(evidence.get("freshness_path"), "evidence.freshness_path"),
     )
 
 

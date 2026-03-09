@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from collections.abc import Mapping
@@ -14,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.contract_model import SuccessCondition, load_contract  # noqa: E402
 from src.evidence import ensure_relative_artifact_path, ensure_within, sha256_bytes, sha256_file  # noqa: E402
+from src.integrity import load_integrity_lock, validate_lock_binding  # noqa: E402
 
 
 class ManifestEntry(TypedDict):
@@ -21,6 +23,7 @@ class ManifestEntry(TypedDict):
     type: str
     command: str
     timestamp: str
+    run_id: str
     contract_sha256: str
     stdout_path: str
     stderr_path: str
@@ -31,6 +34,7 @@ class ManifestEntry(TypedDict):
 
 class EvidenceIndex(TypedDict):
     contract_sha256: str
+    run_id: str
     hash_algorithm: str
     artifacts: dict[str, str]
 
@@ -49,6 +53,12 @@ class VerifyResult(TypedDict):
     reasons: list[str]
     contract_sha256: str
     verification_timestamp: str
+
+
+RUN_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+VERIFY_RESULT_FILENAME = "verify_result.json"
+VERIFY_OUTPUT_DIRNAME = "verify"
+EVIDENCE_INDEX_FILENAME = "evidence_index.json"
 
 
 def write_result(output_dir: Path, payload: VerifyResult) -> None:
@@ -71,6 +81,13 @@ def require_non_empty_string(value: object, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} must be a non-empty string")
     return value.strip()
+
+
+def require_run_id(value: object, name: str) -> str:
+    run_id = require_non_empty_string(value, name)
+    if RUN_ID_PATTERN.fullmatch(run_id) is None:
+        raise ValueError(f"{name} must be a 32-char lowercase hex string")
+    return run_id
 
 
 def require_str_dict(value: object, name: str) -> dict[str, str]:
@@ -100,6 +117,7 @@ def load_manifest(output_dir: Path) -> tuple[dict[str, ManifestEntry], Path]:
                 "type",
                 "command",
                 "timestamp",
+                "run_id",
                 "contract_sha256",
                 "stdout_path",
                 "stderr_path",
@@ -127,6 +145,7 @@ def load_manifest(output_dir: Path) -> tuple[dict[str, ManifestEntry], Path]:
                 entry_data.get("timestamp"),
                 f"execution_manifest entry {key}.timestamp",
             ),
+            run_id=require_run_id(entry_data.get("run_id"), f"execution_manifest entry {key}.run_id"),
             contract_sha256=require_non_empty_string(
                 entry_data.get("contract_sha256"),
                 f"execution_manifest entry {key}.contract_sha256",
@@ -155,7 +174,7 @@ def load_manifest(output_dir: Path) -> tuple[dict[str, ManifestEntry], Path]:
 def load_evidence_index(output_dir: Path) -> EvidenceIndex:
     path = output_dir / "evidence_index.json"
     data = load_json_object(path, "evidence_index.json")
-    required_fields = frozenset({"contract_sha256", "hash_algorithm", "artifacts"})
+    required_fields = frozenset({"contract_sha256", "run_id", "hash_algorithm", "artifacts"})
     unknown = set(data) - required_fields
     missing = required_fields - set(data)
     if missing:
@@ -164,9 +183,17 @@ def load_evidence_index(output_dir: Path) -> EvidenceIndex:
         raise ValueError(f"evidence_index.json has unknown fields: {', '.join(sorted(unknown))}")
     return EvidenceIndex(
         contract_sha256=require_non_empty_string(data.get("contract_sha256"), "evidence_index.json.contract_sha256"),
+        run_id=require_run_id(data.get("run_id"), "evidence_index.json.run_id"),
         hash_algorithm=require_non_empty_string(data.get("hash_algorithm"), "evidence_index.json.hash_algorithm"),
         artifacts=require_str_dict(data.get("artifacts"), "evidence_index.json.artifacts"),
     )
+
+
+def load_expected_run_id(repo_root: Path, freshness_path_text: str) -> str:
+    freshness_path = ensure_within(repo_root, repo_root / freshness_path_text, name="evidence.freshness_path")
+    if not freshness_path.exists():
+        raise ValueError("missing freshness marker")
+    return require_run_id(freshness_path.read_text(encoding="utf-8").strip(), "freshness marker")
 
 
 def read_exit_code(path: Path, condition_id: str) -> int:
@@ -193,6 +220,7 @@ def verify_meta_file(meta_path: Path, entry: ManifestEntry, condition_id: str) -
         "type": entry["type"],
         "command": entry["command"],
         "timestamp": entry["timestamp"],
+        "run_id": entry["run_id"],
         "contract_sha256": entry["contract_sha256"],
     }
     if set(data) != set(expected):
@@ -216,6 +244,8 @@ def verify_executor_entry(
         raise ValueError(f"manifest type mismatch for {condition.id}")
     if entry["command"] != condition.require_command():
         raise ValueError(f"manifest command mismatch for {condition.id}")
+    if entry["run_id"] != evidence_index["run_id"]:
+        raise ValueError(f"manifest run_id mismatch for {condition.id}")
     if entry["contract_sha256"] != contract_sha256:
         raise ValueError(f"manifest contract hash mismatch for {condition.id}")
 
@@ -330,11 +360,14 @@ def validate_manifest_and_index(
     manifest_path: Path,
     evidence_index: EvidenceIndex,
     contract_sha256: str,
+    expected_run_id: str,
 ) -> None:
     if evidence_index["hash_algorithm"] != "sha256":
         raise ValueError("unsupported evidence hash algorithm")
     if evidence_index["contract_sha256"] != contract_sha256:
         raise ValueError("evidence index contract hash mismatch")
+    if evidence_index["run_id"] != expected_run_id:
+        raise ValueError("evidence run_id does not match freshness marker")
 
     executor_conditions = {condition.id: condition for condition in contract_conditions if condition.is_executor_run()}
     if set(manifest) != set(executor_conditions):
@@ -358,6 +391,8 @@ def validate_manifest_and_index(
         if overlap:
             raise ValueError(f"duplicate artifact reference: {sorted(overlap)[0]}")
         referenced_artifacts.update(entry_artifacts)
+        if entry["run_id"] != expected_run_id:
+            raise ValueError(f"manifest run_id mismatch for {condition_id}")
         if entry["contract_sha256"] != contract_sha256:
             raise ValueError(f"manifest contract hash mismatch for {condition_id}")
 
@@ -374,8 +409,30 @@ def validate_manifest_and_index(
         raise ValueError("execution manifest hash mismatch")
 
 
-def main(argv: list[str]) -> int:
-    repo_root = Path.cwd().resolve()
+def is_verifier_owned_artifact(path_text: str) -> bool:
+    if path_text == VERIFY_RESULT_FILENAME:
+        return True
+    return path_text.startswith(f"{VERIFY_OUTPUT_DIRNAME}/")
+
+
+def collect_artifact_inventory(output_dir: Path) -> set[str]:
+    files: set[str] = set()
+    for path in sorted(output_dir.rglob("*")):
+        if path.is_file():
+            files.add(path.relative_to(output_dir).as_posix())
+    return files
+
+
+def validate_artifact_inventory(output_dir: Path, evidence_index: EvidenceIndex) -> None:
+    expected = set(evidence_index["artifacts"])
+    expected.add(EVIDENCE_INDEX_FILENAME)
+    actual = collect_artifact_inventory(output_dir)
+    extras = sorted(path for path in (actual - expected) if not is_verifier_owned_artifact(path))
+    if extras:
+        raise ValueError(f"unexpected artifact files on disk: {', '.join(extras)}")
+
+
+def verify_workspace(repo_root: Path, contract_path: Path) -> int:
     output_dir = repo_root / ".artifacts"
     result_payload: VerifyResult = {
         "status": "FAIL",
@@ -385,14 +442,12 @@ def main(argv: list[str]) -> int:
         "verification_timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    if len(argv) != 2:
-        write_result(output_dir, result_payload)
-        print("FAIL")
-        return 2
-
     try:
-        contract_path = Path(argv[1]).resolve()
         contract = load_contract(contract_path)
+        lock_path = repo_root / ".truth" / "lock.json"
+        if lock_path.exists():
+            lock = load_integrity_lock(lock_path)
+            validate_lock_binding(repo_root, contract, lock)
         output_dir = ensure_within(repo_root, repo_root / contract.evidence.output_dir, name="evidence.output_dir")
         output_dir.mkdir(parents=True, exist_ok=True)
         contract_sha256 = sha256_bytes(contract_path.read_bytes())
@@ -400,15 +455,18 @@ def main(argv: list[str]) -> int:
 
         manifest, manifest_path = load_manifest(output_dir)
         evidence_index = load_evidence_index(output_dir)
+        expected_run_id = load_expected_run_id(repo_root, contract.evidence.freshness_path)
         validate_manifest_and_index(
             contract.success_conditions,
             manifest,
             manifest_path,
             evidence_index,
             contract_sha256,
+            expected_run_id,
         )
+        validate_artifact_inventory(output_dir, evidence_index)
 
-        verify_dir = output_dir / "verify"
+        verify_dir = output_dir / VERIFY_OUTPUT_DIRNAME
         verify_dir.mkdir(parents=True, exist_ok=True)
 
         results: list[ConditionResult] = []
@@ -445,6 +503,26 @@ def main(argv: list[str]) -> int:
     write_result(output_dir, result_payload)
     print(result_payload["status"])
     return 0 if result_payload["status"] == "PASS" else 1
+
+
+def main(argv: list[str]) -> int:
+    output_dir = REPO_ROOT / ".artifacts"
+    result_payload: VerifyResult = {
+        "status": "FAIL",
+        "conditions": [],
+        "reasons": [],
+        "contract_sha256": "",
+        "verification_timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if len(argv) != 2:
+        result_payload["reasons"] = ["entry path requires a contract path argument"]
+        write_result(output_dir, result_payload)
+        print("FAIL")
+        return 1
+
+    contract_path = Path(argv[1]).resolve()
+    repo_root = contract_path.parent
+    return verify_workspace(repo_root, contract_path)
 
 
 if __name__ == "__main__":

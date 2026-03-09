@@ -33,6 +33,7 @@ evidence:
   save_stderr: true
   save_exit_codes: true
   hash_algorithm: "sha256"
+  freshness_path: ".truth/latest_run_id.txt"
 
 policy:
   fail_closed: true

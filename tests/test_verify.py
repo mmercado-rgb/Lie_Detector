@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 
 from scripts.run_agent import main as run_agent_main
 from scripts.verify import main as verify_main
@@ -108,6 +109,61 @@ def test_verify_fails_on_missing_evidence(tmp_path, capsys, monkeypatch) -> None
     assert result_payload["reasons"] == ["missing evidence file for exec-check: exec-check.exitcode.txt"]
 
 
+def test_verify_baseline_pass(tmp_path, capsys, monkeypatch) -> None:
+    contract_path = prepare_workspace(tmp_path, monkeypatch)
+    output_dir = tmp_path / ".artifacts"
+    _ = capsys.readouterr()
+    write_file(tmp_path / "probe.txt", "SECOND\n")
+
+    exit_code = verify_main(["verify.py", str(contract_path)])
+    captured = capsys.readouterr()
+    result_payload = json.loads((output_dir / "verify_result.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert captured.out.strip() == "PASS"
+    assert result_payload["status"] == "PASS"
+
+
+def test_verify_fails_on_injected_extra_artifact_file(tmp_path, capsys, monkeypatch) -> None:
+    contract_path = prepare_workspace(tmp_path, monkeypatch)
+    output_dir = tmp_path / ".artifacts"
+    _ = capsys.readouterr()
+    write_file(tmp_path / "probe.txt", "SECOND\n")
+    assert verify_main(["verify.py", str(contract_path)]) == 0
+    _ = capsys.readouterr()
+    write_file(output_dir / "unauthorized.txt", "injected\n")
+
+    exit_code = verify_main(["verify.py", str(contract_path)])
+    captured = capsys.readouterr()
+    result_payload = json.loads((output_dir / "verify_result.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 1
+    assert captured.out.strip() == "FAIL"
+    assert result_payload["status"] == "FAIL"
+    assert result_payload["reasons"] == ["unexpected artifact files on disk: unauthorized.txt"]
+
+
+def test_verify_allowlisted_verifier_files_do_not_fail_inventory(tmp_path, capsys, monkeypatch) -> None:
+    contract_path = prepare_workspace(tmp_path, monkeypatch)
+    output_dir = tmp_path / ".artifacts"
+    _ = capsys.readouterr()
+    write_file(tmp_path / "probe.txt", "SECOND\n")
+
+    first_exit_code = verify_main(["verify.py", str(contract_path)])
+    _ = capsys.readouterr()
+    assert first_exit_code == 0
+    assert (output_dir / "verify_result.json").exists()
+    assert (output_dir / "verify" / "black-box.stdout.txt").exists()
+
+    second_exit_code = verify_main(["verify.py", str(contract_path)])
+    second_output = capsys.readouterr()
+    second_payload = json.loads((output_dir / "verify_result.json").read_text(encoding="utf-8"))
+
+    assert second_exit_code == 0
+    assert second_output.out.strip() == "PASS"
+    assert second_payload["status"] == "PASS"
+
+
 def test_verify_executes_black_box_condition_independently(tmp_path, capsys, monkeypatch) -> None:
     contract_path = prepare_workspace(tmp_path, monkeypatch)
     output_dir = tmp_path / ".artifacts"
@@ -122,3 +178,53 @@ def test_verify_executes_black_box_condition_independently(tmp_path, capsys, mon
     assert captured.out.strip() == "PASS"
     assert result_payload["status"] == "PASS"
     assert (output_dir / "verify" / "black-box.stdout.txt").read_text(encoding="utf-8").strip() == "SECOND"
+
+
+def test_verify_fails_on_replayed_artifacts_bundle(tmp_path, capsys, monkeypatch) -> None:
+    build_sample_workspace(tmp_path)
+    write_file(tmp_path / "probe.txt", "RUN_A\n")
+    contract_path = write_contract(
+        tmp_path,
+        require_black_box_verification=False,
+        success_conditions=[
+            {
+                "id": "exec-check",
+                "type": "command_stdout_contains",
+                "command": "python -c \"from pathlib import Path; print(Path('probe.txt').read_text(encoding='utf-8').strip())\"",
+                "contains": "RUN_A",
+            },
+            {
+                "id": "required-file",
+                "type": "file_exists",
+                "path": "src/app.py",
+            },
+        ],
+    )
+
+    monkeypatch.chdir(tmp_path)
+    assert run_agent_main(["run_agent.py", str(contract_path)]) == 0
+    _ = capsys.readouterr()
+    assert verify_main(["verify.py", str(contract_path)]) == 0
+    _ = capsys.readouterr()
+
+    output_dir = tmp_path / ".artifacts"
+    replay_bundle = tmp_path / ".artifacts_run_a"
+    shutil.copytree(output_dir, replay_bundle)
+
+    write_file(tmp_path / "probe.txt", "RUN_B\n")
+    assert run_agent_main(["run_agent.py", str(contract_path)]) == 0
+    _ = capsys.readouterr()
+    assert verify_main(["verify.py", str(contract_path)]) == 1
+    _ = capsys.readouterr()
+
+    shutil.rmtree(output_dir)
+    shutil.copytree(replay_bundle, output_dir)
+
+    exit_code = verify_main(["verify.py", str(contract_path)])
+    captured = capsys.readouterr()
+    result_payload = json.loads((output_dir / "verify_result.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 1
+    assert captured.out.strip() == "FAIL"
+    assert result_payload["status"] == "FAIL"
+    assert result_payload["reasons"] == ["evidence run_id does not match freshness marker"]
