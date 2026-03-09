@@ -1,6 +1,0 @@
-{
-  "files.exclude": {
-    "**/.artifacts": true
-  },
-  "python.testing.pytestEnabled": true
-}

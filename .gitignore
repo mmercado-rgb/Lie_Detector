@@ -1,5 +1,5 @@
 # Python environments
-.venv/
+.venv*/
 __pycache__/
 *.pyc
 *.pyo
@@ -13,6 +13,7 @@ __pycache__/
 
 # Workspace artifacts
 .artifacts/
+.codex/
 
 # Temporary contracts
 tmp_*.success.yaml
@@ -20,8 +21,9 @@ tmp_*.success.yaml
 # OS / editor
 .DS_Store
 Thumbs.db
-.vscode/*.log
+.vscode/
 
 .tmp/
 .cache/
 .localappdata/
+.truth/latest_run_id.txt
