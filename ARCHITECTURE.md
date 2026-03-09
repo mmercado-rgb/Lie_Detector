@@ -1,25 +1,27 @@
 # Authority Boundaries
 
-## Workflow
+Workflow:
 
-Contract -> Execution -> Evidence -> Independent Verification -> Final Verdict
+Contract admission -> Execution -> Evidence -> Independent verification -> Verdict
 
-## Components
+Components:
 
-Contract defines success and reserved outcome language.
+- Contract: strict JSON contract at `workspace.success.json`, validated against `schemas/workspace_success.schema.json` through `src.integrity.load_contract_with_integrity_gate(...)`.
+- Preflight: `scripts/preflight.py` is an admission check only; output is `VALID` or `INVALID`.
+- Executor: `scripts/run_agent.py` runs executor-bound checks and writes evidence artifacts.
+- Verifier: `scripts/verify.py` revalidates contract binding, evidence integrity, freshness, and verifier-run conditions.
 
-Executor runs only executor-bound commands and records evidence.
+Enforcement:
 
-Filesystem stores the contract-bound evidence set under `.artifacts/`.
+- Invalid contracts fail closed and block execution.
+- Evidence is contract-bound and integrity-checked.
+- Replayed stale artifacts are rejected.
+- Declared failing execution conditions produce verifier `FAIL`.
+- Only `scripts/verify.py` may print final `PASS` or `FAIL`.
 
-Verifier validates hashes, re-checks declared conditions, runs verifier-only black-box commands, and determines outcome.
+## WARNING: Optional integrity lock mechanism
 
-## Enforcement
-
-- `workspace.success.json` is a strict v2 contract. Unknown keys, duplicate JSON keys, malformed paths, invalid ids, and missing verifier-run checks are rejected by `src/contract_model.py`.
-- `scripts/preflight.py` prints only `VALID` or `INVALID`.
-- `scripts/run_agent.py` writes executor evidence plus `execution_manifest.json` and `evidence_index.json`, each bound to the contract `sha256`, and records a per-run `run_id` in `.truth/latest_run_id.txt`.
-- `scripts/run_agent.py` does not print reserved outcome words and does not emit the final verdict.
-- `scripts/verify.py` recomputes the contract hash, verifies artifact integrity, requires artifact `run_id` to match `.truth/latest_run_id.txt`, rejects orphaned or tampered evidence, and writes `.artifacts/verify_result.json`.
-- `scripts/verify.py` executes verifier-run black-box checks under `.artifacts/verify/`.
-- Only `scripts/verify.py` may print `PASS` or `FAIL`.
+The `.truth/lock.json` feature can bind verifier/runtime behavior to specific file hashes and command resolutions.  
+This mechanism is **not required** for the core truth-bound verification architecture.  
+It is provided as an advanced integrity control and may restrict or pin runtime components.  
+Use only if you understand the implications.

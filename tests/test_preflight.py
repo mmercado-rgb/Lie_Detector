@@ -16,7 +16,6 @@ def test_validate_contract_rejects_unknown_condition_type() -> None:
         "goal": "Reject malformed contract",
         "inputs": {
             "repo_root": ".",
-            "allowed_paths": ["src/**"],
         },
         "success_conditions": [
             {
@@ -71,8 +70,7 @@ def test_preflight_rejects_duplicate_json_keys(tmp_path, capsys, monkeypatch) ->
   "task_id": "test-002",
   "goal": "Duplicate keys are invalid",
   "inputs": {
-    "repo_root": ".",
-    "allowed_paths": ["src/**"]
+    "repo_root": "."
   },
   "success_conditions": [
     {

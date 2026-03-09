@@ -36,7 +36,6 @@ def write_contract(
         "goal": "Exercise contract flow",
         "inputs": {
             "repo_root": ".",
-            "allowed_paths": ["src/**", "tests/**", "scripts/**"],
         },
         "success_conditions": success_conditions,
         "evidence": {

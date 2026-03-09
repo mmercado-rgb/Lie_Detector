@@ -227,6 +227,11 @@ def require_relative_repo_path(value: object, name: str) -> str:
     return normalize_relative_text(require_non_empty_string(value, name), name, allow_glob=False)
 
 
+# WARNING: Optional integrity lock mechanism
+# The `.truth/lock.json` feature can bind verifier/runtime behavior to specific file hashes and command
+# resolutions. This mechanism is not required for the core truth-bound verification architecture.
+# It is provided as an advanced integrity control and may restrict or pin runtime components.
+# Use only if you understand the implications.
 def load_integrity_lock(lock_path: Path) -> IntegrityLock:
     if not lock_path.exists():
         raise ValueError(f"integrity lock is missing: {LOCK_RELATIVE_PATH}")

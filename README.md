@@ -1,24 +1,31 @@
 # Truth-Bound Workspace Bootstrap
 
-This workspace uses a contract-first flow:
+Flow:
 
-Contract -> Execution -> Evidence -> Independent Verification -> Final Verdict
+Contract admission -> Execution -> Evidence -> Independent verification -> Verdict
 
-`workspace.success.json` is the only declared source of measurable success. The contract is loaded before execution and bound to evidence with a `sha256` digest.
+Current contract and schema:
 
-`scripts/run_agent.py` executes only executor-run command conditions. It writes raw stdout, stderr, exit codes, metadata, `execution_manifest.json`, and `evidence_index.json` under `.artifacts/`, then updates the freshness marker file declared by `evidence.freshness_path`. It does not decide task outcome and it does not run verifier-only checks.
+- Contract file: `workspace.success.json`
+- Authoritative schema: `schemas/workspace_success.schema.json`
+- Contract loading path: `src.integrity.load_contract_with_integrity_gate(...)`
 
-`scripts/verify.py` loads the contract from disk, recomputes the contract digest, verifies artifact hashes, checks `run_id` against the freshness marker, rejects tampered or missing evidence, re-checks file conditions from disk state, and executes verifier-run black-box checks under `.artifacts/verify/`.
+Command boundaries:
 
-Only `scripts/verify.py` may emit the final `PASS` or `FAIL`.
+- `scripts/preflight.py` is a thin admission entrypoint and prints only `VALID` or `INVALID`.
+- `scripts/run_agent.py` executes only executor-run conditions and writes evidence under `.artifacts/`.
+- `scripts/verify.py` independently validates integrity and conditions.
+- Only `scripts/verify.py` may emit final `PASS` or `FAIL`.
 
-## Verification Checklist
+Required proof behavior:
 
-- [ ] Clean run: `run_agent.py` then `verify.py` returns `PASS`.
-- [ ] Re-hash integrity: modifying any evidence artifact makes `verify.py` return `FAIL`.
-- [ ] Freshness binding: replaying a prior `.artifacts` bundle under the same contract makes `verify.py` return `FAIL`.
+- Invalid contracts block execution.
+- Clean run passes verification.
+- Tampered artifacts fail verification.
+- Replayed artifacts fail verification.
+- Failing declared execution conditions fail verification.
 
-## Commands
+Commands:
 
 ```powershell
 python scripts/preflight.py workspace.success.json
@@ -26,3 +33,10 @@ python scripts/run_agent.py workspace.success.json
 python scripts/verify.py workspace.success.json
 python -m pytest -q
 ```
+
+## WARNING: Optional integrity lock mechanism
+
+The `.truth/lock.json` feature can bind verifier/runtime behavior to specific file hashes and command resolutions.  
+This mechanism is **not required** for the core truth-bound verification architecture.  
+It is provided as an advanced integrity control and may restrict or pin runtime components.  
+Use only if you understand the implications.

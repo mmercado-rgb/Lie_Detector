@@ -19,7 +19,6 @@ WORKSPACE_CONTRACT = {
     "goal": "Minimal verify injection test",
     "inputs": {
         "repo_root": ".",
-        "allowed_paths": ["src/**", "tests/**", "scripts/**"],
     },
     "success_conditions": [
         {

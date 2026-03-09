@@ -3,12 +3,7 @@
   "task_id": "hardening-001",
   "goal": "Implement requested change without regressions",
   "inputs": {
-    "repo_root": ".",
-    "allowed_paths": [
-      "src/**",
-      "tests/**",
-      "scripts/**"
-    ]
+    "repo_root": "."
   },
   "success_conditions": [
     {

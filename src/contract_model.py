@@ -49,7 +49,6 @@ SHELL_REDIRECTION_TOKENS: Final[tuple[str, ...]] = (">", "<", "|", ";", "&&", "|
 @dataclass(frozen=True)
 class Inputs:
     repo_root: str
-    allowed_paths: list[str]
 
 
 @dataclass(frozen=True)
@@ -184,10 +183,6 @@ def require_repo_relative_path(value: object, name: str) -> str:
     return normalize_relative_text(require_non_empty_string(value, name), name, allow_glob=False)
 
 
-def require_repo_relative_pattern(value: object, name: str) -> str:
-    return normalize_relative_text(require_non_empty_string(value, name), name, allow_glob=True)
-
-
 def require_condition_id(value: object, name: str) -> str:
     condition_id = require_non_empty_string(value, name)
     if ID_PATTERN.fullmatch(condition_id) is None:
@@ -233,15 +228,7 @@ def require_string_list(value: object, name: str) -> list[str]:
 def parse_inputs(inputs_value: object) -> Inputs:
     inputs = require_mapping(inputs_value, "inputs")
     repo_root = require_repo_root(inputs.get("repo_root"), "inputs.repo_root")
-    allowed_paths_value = require_non_empty_list(
-        inputs.get("allowed_paths"),
-        "inputs.allowed_paths",
-    )
-    allowed_paths = [
-        require_repo_relative_pattern(item, f"inputs.allowed_paths[{index}]")
-        for index, item in enumerate(allowed_paths_value)
-    ]
-    return Inputs(repo_root=repo_root, allowed_paths=allowed_paths)
+    return Inputs(repo_root=repo_root)
 
 
 def parse_evidence(evidence_value: object) -> Evidence:
