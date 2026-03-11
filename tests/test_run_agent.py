@@ -49,21 +49,24 @@ def test_run_agent_writes_contract_hashes_and_evidence_index(tmp_path, capsys, m
     evidence_index = json.loads((output_dir / "evidence_index.json").read_text(encoding="utf-8"))
     contract_sha256 = hashlib.sha256(contract_path.read_bytes()).hexdigest()
 
-    assert set(manifest) == {"exec-check"}
-    entry = manifest["exec-check"]
+    assert manifest["previous_run_id"] is None
+    assert evidence_index["previous_run_id"] is None
+    assert set(manifest["entries"]) == {"exec-check"}
+    entry = manifest["entries"]["exec-check"]
     assert entry["contract_sha256"] == contract_sha256
     assert evidence_index["contract_sha256"] == contract_sha256
     assert len(evidence_index["run_id"]) == 32
     assert evidence_index["hash_algorithm"] == "sha256"
     assert "execution_manifest.json" in evidence_index["artifacts"]
-    assert (tmp_path / ".truth" / "latest_run_id.txt").read_text(encoding="utf-8").strip() == evidence_index["run_id"]
+    assert manifest["run_id"] == evidence_index["run_id"]
+    assert not (tmp_path / ".truth" / "latest_run_id.txt").exists()
 
     for artifact_name, artifact_hash in entry["artifact_hashes"].items():
         artifact_path = output_dir / artifact_name
         assert artifact_path.exists()
         assert hashlib.sha256(artifact_path.read_bytes()).hexdigest() == artifact_hash
         assert evidence_index["artifacts"][artifact_name] == artifact_hash
-    assert entry["run_id"] == evidence_index["run_id"]
+    assert entry["run_id"] == manifest["run_id"]
 
     assert not (output_dir / "verify_result.json").exists()
     assert not (output_dir / "black-box.stdout.txt").exists()
@@ -184,4 +187,3 @@ def test_run_agent_blocks_absolute_outside_write_attempt(tmp_path, capsys, monke
     assert exit_code != 0
     assert captured.out.strip() == "execution error"
     assert not outside_path.exists()
-

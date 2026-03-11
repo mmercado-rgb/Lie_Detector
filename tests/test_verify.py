@@ -57,7 +57,7 @@ def test_verify_fails_when_manifest_command_differs_from_contract(tmp_path, caps
 
     manifest_path = output_dir / "execution_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["exec-check"]["command"] = 'python -c "print(\'BETA\')"'
+    manifest["entries"]["exec-check"]["command"] = 'python -c "print(\'BETA\')"'
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     evidence_index_path = output_dir / "evidence_index.json"
@@ -131,6 +131,8 @@ def test_verify_fails_on_injected_extra_artifact_file(tmp_path, capsys, monkeypa
     write_file(tmp_path / "probe.txt", "SECOND\n")
     assert verify_main(["verify.py", str(contract_path)]) == 0
     _ = capsys.readouterr()
+    assert run_agent_main(["run_agent.py", str(contract_path)]) == 0
+    _ = capsys.readouterr()
     write_file(output_dir / "unauthorized.txt", "injected\n")
 
     exit_code = verify_main(["verify.py", str(contract_path)])
@@ -155,6 +157,8 @@ def test_verify_allowlisted_verifier_files_do_not_fail_inventory(tmp_path, capsy
     assert (output_dir / "verify_result.json").exists()
     assert (output_dir / "verify" / "black-box.stdout.txt").exists()
 
+    assert run_agent_main(["run_agent.py", str(contract_path)]) == 0
+    _ = capsys.readouterr()
     second_exit_code = verify_main(["verify.py", str(contract_path)])
     second_output = capsys.readouterr()
     second_payload = json.loads((output_dir / "verify_result.json").read_text(encoding="utf-8"))
@@ -227,7 +231,7 @@ def test_verify_fails_on_replayed_artifacts_bundle(tmp_path, capsys, monkeypatch
     assert exit_code == 1
     assert captured.out.strip() == "FAIL"
     assert result_payload["status"] == "FAIL"
-    assert result_payload["reasons"] == ["evidence run_id does not match freshness marker"]
+    assert result_payload["reasons"] == ["previous_run_id does not match the expected prior run"]
 
 def test_verify_fails_on_undeclared_extra_artifact(tmp_path, capsys, monkeypatch) -> None:
     build_sample_workspace(tmp_path)

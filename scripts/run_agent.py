@@ -13,6 +13,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.contract_model import SuccessCondition  # noqa: E402
+from src.continuity import load_latest_verified_run_id  # noqa: E402
 from src.evidence import contains_reserved_word, ensure_within, sha256_bytes, sha256_file  # noqa: E402
 from src.integrity import load_contract_with_integrity_gate  # noqa: E402
 
@@ -31,9 +32,16 @@ class ManifestEntry(TypedDict):
     artifact_hashes: dict[str, str]
 
 
+class ExecutionManifest(TypedDict):
+    run_id: str
+    previous_run_id: str | None
+    entries: dict[str, ManifestEntry]
+
+
 class EvidenceIndex(TypedDict):
     contract_sha256: str
     run_id: str
+    previous_run_id: str | None
     hash_algorithm: str
     artifacts: dict[str, str]
 
@@ -94,6 +102,7 @@ def run_agent(repo_root: Path, contract_path: Path) -> int:
         output_dir = ensure_output_dir(repo_root, contract.evidence.output_dir)
         contract_sha256 = sha256_bytes(contract_path.read_bytes())
         run_id = uuid4().hex
+        previous_run_id = load_latest_verified_run_id(repo_root, contract.evidence.freshness_path)
         reserved_words = contract.policy.reserved_outcome_words
     except Exception:  # noqa: BLE001
         print("execution error")
@@ -155,25 +164,23 @@ def run_agent(repo_root: Path, contract_path: Path) -> int:
             emit_executor_line(f"executed {condition_id}", reserved_words)
 
         manifest_path = output_dir / "execution_manifest.json"
-        manifest_hash = write_json(manifest_path, manifest, reserved_words=reserved_words)
+        execution_manifest: ExecutionManifest = {
+            "run_id": run_id,
+            "previous_run_id": previous_run_id,
+            "entries": manifest,
+        }
+        manifest_hash = write_json(manifest_path, execution_manifest, reserved_words=reserved_words)
         artifact_index[manifest_path.name] = manifest_hash
 
         index_path = output_dir / "evidence_index.json"
         evidence_index: EvidenceIndex = {
             "contract_sha256": contract_sha256,
             "run_id": run_id,
+            "previous_run_id": previous_run_id,
             "hash_algorithm": contract.evidence.hash_algorithm,
             "artifacts": artifact_index,
         }
         _ = write_json(index_path, evidence_index, reserved_words=reserved_words)
-
-        freshness_path = ensure_within(
-            repo_root,
-            repo_root / contract.evidence.freshness_path,
-            name="evidence.freshness_path",
-        )
-        freshness_path.parent.mkdir(parents=True, exist_ok=True)
-        write_text(freshness_path, f"{run_id}\n")
     except Exception:  # noqa: BLE001
         print("execution error")
         return 2

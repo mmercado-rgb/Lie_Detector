@@ -24,7 +24,7 @@ WORKSPACE_CONTRACT = {
         {
             "id": "echo-ok",
             "type": "command_stdout_contains",
-            "command": f"{PYTHON} -c \"print('HELLO')\"",
+            "command": f'"{PYTHON}" -c "print(\'HELLO\')"',
             "contains": "HELLO",
         }
     ],

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 import sys
 from collections.abc import Mapping
@@ -14,6 +13,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.contract_model import SuccessCondition  # noqa: E402
+from src.continuity import load_latest_verified_run_id, parse_run_id, write_latest_verified_run_id  # noqa: E402
 from src.evidence import ensure_relative_artifact_path, ensure_within, sha256_bytes, sha256_file  # noqa: E402
 from src.integrity import (  # noqa: E402
     load_contract_with_integrity_gate,
@@ -36,9 +36,16 @@ class ManifestEntry(TypedDict):
     artifact_hashes: dict[str, str]
 
 
+class ExecutionManifest(TypedDict):
+    run_id: str
+    previous_run_id: str | None
+    entries: dict[str, ManifestEntry]
+
+
 class EvidenceIndex(TypedDict):
     contract_sha256: str
     run_id: str
+    previous_run_id: str | None
     hash_algorithm: str
     artifacts: dict[str, str]
 
@@ -59,7 +66,6 @@ class VerifyResult(TypedDict):
     verification_timestamp: str
 
 
-RUN_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 VERIFY_RESULT_FILENAME = "verify_result.json"
 VERIFY_OUTPUT_DIRNAME = "verify"
 EVIDENCE_INDEX_FILENAME = "evidence_index.json"
@@ -88,10 +94,13 @@ def require_non_empty_string(value: object, name: str) -> str:
 
 
 def require_run_id(value: object, name: str) -> str:
-    run_id = require_non_empty_string(value, name)
-    if RUN_ID_PATTERN.fullmatch(run_id) is None:
-        raise ValueError(f"{name} must be a 32-char lowercase hex string")
-    return run_id
+    return parse_run_id(value, name)
+
+
+def require_nullable_run_id(value: object, name: str) -> str | None:
+    if value is None:
+        return None
+    return require_run_id(value, name)
 
 
 def require_str_dict(value: object, name: str) -> dict[str, str]:
@@ -109,11 +118,24 @@ def load_json_object(path: Path, name: str) -> Mapping[str, object]:
     return require_object_mapping(raw, name)
 
 
-def load_manifest(output_dir: Path) -> tuple[dict[str, ManifestEntry], Path]:
+def load_manifest(output_dir: Path) -> tuple[ExecutionManifest, Path]:
     manifest_path = output_dir / "execution_manifest.json"
     data = load_json_object(manifest_path, "execution_manifest.json")
-    manifest: dict[str, ManifestEntry] = {}
-    for key, value in data.items():
+    required_fields = frozenset({"run_id", "previous_run_id", "entries"})
+    unknown = set(data) - required_fields
+    missing = required_fields - set(data)
+    if "run_id" in missing:
+        raise ValueError("current manifest is missing run_id")
+    if "previous_run_id" in missing:
+        raise ValueError("current manifest is missing previous_run_id")
+    if missing:
+        raise ValueError(f"execution_manifest.json missing fields: {', '.join(sorted(missing))}")
+    if unknown:
+        raise ValueError(f"execution_manifest.json has unknown fields: {', '.join(sorted(unknown))}")
+
+    entries_data = require_object_mapping(data.get("entries"), "execution_manifest.json.entries")
+    entries: dict[str, ManifestEntry] = {}
+    for key, value in entries_data.items():
         entry_data = require_object_mapping(value, f"execution_manifest entry {key}")
         required_fields = frozenset(
             {
@@ -141,7 +163,7 @@ def load_manifest(output_dir: Path) -> tuple[dict[str, ManifestEntry], Path]:
             entry_data.get("artifact_hashes"),
             f"execution_manifest entry {key}.artifact_hashes",
         )
-        manifest[key] = ManifestEntry(
+        entries[key] = ManifestEntry(
             id=require_non_empty_string(entry_data.get("id"), f"execution_manifest entry {key}.id"),
             type=require_non_empty_string(entry_data.get("type"), f"execution_manifest entry {key}.type"),
             command=require_non_empty_string(entry_data.get("command"), f"execution_manifest entry {key}.command"),
@@ -172,13 +194,23 @@ def load_manifest(output_dir: Path) -> tuple[dict[str, ManifestEntry], Path]:
             ),
             artifact_hashes=artifact_hashes,
         )
-    return manifest, manifest_path
+    return (
+        ExecutionManifest(
+            run_id=require_run_id(data.get("run_id"), "execution_manifest.json.run_id"),
+            previous_run_id=require_nullable_run_id(
+                data.get("previous_run_id"),
+                "execution_manifest.json.previous_run_id",
+            ),
+            entries=entries,
+        ),
+        manifest_path,
+    )
 
 
 def load_evidence_index(output_dir: Path) -> EvidenceIndex:
     path = output_dir / "evidence_index.json"
     data = load_json_object(path, "evidence_index.json")
-    required_fields = frozenset({"contract_sha256", "run_id", "hash_algorithm", "artifacts"})
+    required_fields = frozenset({"contract_sha256", "run_id", "previous_run_id", "hash_algorithm", "artifacts"})
     unknown = set(data) - required_fields
     missing = required_fields - set(data)
     if missing:
@@ -188,16 +220,13 @@ def load_evidence_index(output_dir: Path) -> EvidenceIndex:
     return EvidenceIndex(
         contract_sha256=require_non_empty_string(data.get("contract_sha256"), "evidence_index.json.contract_sha256"),
         run_id=require_run_id(data.get("run_id"), "evidence_index.json.run_id"),
+        previous_run_id=require_nullable_run_id(
+            data.get("previous_run_id"),
+            "evidence_index.json.previous_run_id",
+        ),
         hash_algorithm=require_non_empty_string(data.get("hash_algorithm"), "evidence_index.json.hash_algorithm"),
         artifacts=require_str_dict(data.get("artifacts"), "evidence_index.json.artifacts"),
     )
-
-
-def load_expected_run_id(repo_root: Path, freshness_path_text: str) -> str:
-    freshness_path = ensure_within(repo_root, repo_root / freshness_path_text, name="evidence.freshness_path")
-    if not freshness_path.exists():
-        raise ValueError("missing freshness marker")
-    return require_run_id(freshness_path.read_text(encoding="utf-8").strip(), "freshness marker")
 
 
 def read_exit_code(path: Path, condition_id: str) -> int:
@@ -360,18 +389,28 @@ def evaluate_verifier_condition(condition: SuccessCondition, verify_dir: Path) -
 
 def validate_manifest_and_index(
     contract_conditions: list[SuccessCondition],
-    manifest: dict[str, ManifestEntry],
+    execution_manifest: ExecutionManifest,
     manifest_path: Path,
     evidence_index: EvidenceIndex,
     contract_sha256: str,
-    expected_run_id: str,
+    expected_previous_run_id: str | None,
 ) -> None:
+    manifest = execution_manifest["entries"]
+    current_run_id = execution_manifest["run_id"]
+    previous_run_id = execution_manifest["previous_run_id"]
+
     if evidence_index["hash_algorithm"] != "sha256":
         raise ValueError("unsupported evidence hash algorithm")
     if evidence_index["contract_sha256"] != contract_sha256:
         raise ValueError("evidence index contract hash mismatch")
-    if evidence_index["run_id"] != expected_run_id:
-        raise ValueError("evidence run_id does not match freshness marker")
+    if evidence_index["run_id"] != current_run_id:
+        raise ValueError("evidence run_id does not match current manifest")
+    if evidence_index["previous_run_id"] != previous_run_id:
+        raise ValueError("evidence previous_run_id does not match current manifest")
+    if expected_previous_run_id is None and previous_run_id is not None:
+        raise ValueError("a prior run is required but missing")
+    if expected_previous_run_id is not None and previous_run_id != expected_previous_run_id:
+        raise ValueError("previous_run_id does not match the expected prior run")
 
     executor_conditions = {condition.id: condition for condition in contract_conditions if condition.is_executor_run()}
     if set(manifest) != set(executor_conditions):
@@ -395,7 +434,7 @@ def validate_manifest_and_index(
         if overlap:
             raise ValueError(f"duplicate artifact reference: {sorted(overlap)[0]}")
         referenced_artifacts.update(entry_artifacts)
-        if entry["run_id"] != expected_run_id:
+        if entry["run_id"] != current_run_id:
             raise ValueError(f"manifest run_id mismatch for {condition_id}")
         if entry["contract_sha256"] != contract_sha256:
             raise ValueError(f"manifest contract hash mismatch for {condition_id}")
@@ -457,22 +496,23 @@ def verify_workspace(repo_root: Path, contract_path: Path) -> int:
         contract_sha256 = sha256_bytes(contract_path.read_bytes())
         result_payload["contract_sha256"] = contract_sha256
 
-        manifest, manifest_path = load_manifest(output_dir)
+        execution_manifest, manifest_path = load_manifest(output_dir)
         evidence_index = load_evidence_index(output_dir)
-        expected_run_id = load_expected_run_id(repo_root, contract.evidence.freshness_path)
+        expected_previous_run_id = load_latest_verified_run_id(repo_root, contract.evidence.freshness_path)
         validate_manifest_and_index(
             contract.success_conditions,
-            manifest,
+            execution_manifest,
             manifest_path,
             evidence_index,
             contract_sha256,
-            expected_run_id,
+            expected_previous_run_id,
         )
         validate_artifact_inventory(output_dir, evidence_index)
 
         verify_dir = output_dir / VERIFY_OUTPUT_DIRNAME
         verify_dir.mkdir(parents=True, exist_ok=True)
 
+        manifest = execution_manifest["entries"]
         results: list[ConditionResult] = []
         for condition in contract.success_conditions:
             if condition.type == "file_exists":
@@ -498,6 +538,12 @@ def verify_workspace(repo_root: Path, contract_path: Path) -> int:
 
         result_payload["conditions"] = results
         result_payload["status"] = "PASS" if all(item["ok"] for item in results) else "FAIL"
+        if result_payload["status"] == "PASS":
+            write_latest_verified_run_id(
+                repo_root,
+                contract.evidence.freshness_path,
+                execution_manifest["run_id"],
+            )
     except Exception as exc:  # noqa: BLE001
         result_payload["reasons"] = [str(exc)]
         write_result(output_dir, result_payload)
