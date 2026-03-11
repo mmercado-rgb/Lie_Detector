@@ -1,6 +1,6 @@
-# Reset truth-bound run state and execute pipeline
+# Reset truth-bound artifacts and continuity state, then execute pipeline
 
-Write-Host "Resetting truth-bound state..."
+Write-Host "Resetting artifacts and continuity state..."
 
 if (Test-Path ".artifacts") {
     Remove-Item -Recurse -Force ".artifacts"

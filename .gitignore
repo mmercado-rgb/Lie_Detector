@@ -15,6 +15,7 @@ __pycache__/
 .artifacts/
 .codex/
 output/
+docs/
 
 # Temporary contracts
 tmp_*.success.yaml
@@ -28,3 +29,4 @@ Thumbs.db
 .cache/
 .localappdata/
 .truth/latest_run_id.txt
+
