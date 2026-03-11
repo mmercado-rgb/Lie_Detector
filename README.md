@@ -1,8 +1,12 @@
 # Lie Detector
 
-Lie Detector is a small Python research project for experimenting with a truth-bound execution model.
+Lie Detector is a small Python research project exploring a **truth-bound execution model** for agents.
 
-The central rule is strict: the executor is not allowed to declare success. It can run work and write evidence, but only the verifier is allowed to produce the final verdict.
+The core rule is simple:
+
+**execution cannot certify its own success — only independent verification can.**
+
+The executor may perform work and produce evidence, but only the verifier is allowed to produce the final verdict.
 
 ## Purpose
 
@@ -37,6 +41,38 @@ Authority boundaries:
 
 The executor cannot claim success. A clean execution run is not the same thing as a verified success.
 
+Run Continuity
+
+Each execution run is chained to the previously verified run.
+
+During execution:
+
+run_agent.py generates a new run_id
+
+the previous verified run is read from .truth/latest_run_id.txt
+
+both run_id and previous_run_id are written into the execution manifest and evidence index
+
+During verification:
+
+the verifier checks that previous_run_id matches the last verified run
+
+malformed or missing continuity state causes a fail-closed verification
+
+.truth/latest_run_id.txt is updated only after PASS
+
+This creates a simple run history chain:
+
+Run A
+  ↓
+Run B (previous_run_id = A)
+  ↓
+Run C (previous_run_id = B)
+
+If a run is deleted or the chain is broken, verification fails.
+
+The executor cannot advance the chain. Only the verifier can.
+
 ## Repository Layout
 
 ```text
@@ -48,7 +84,6 @@ Lie_Detector/
 |   `-- verify.py
 |-- src/                          # contract, evidence, and integrity logic
 |-- tests/                        # regression and proof-oriented tests
-|-- docs/                         # proof notes and work orders
 |-- .truth/                       # optional integrity state
 |-- workspace.success.json        # valid example contract
 |-- workspace.invalid.json        # admission failure example
