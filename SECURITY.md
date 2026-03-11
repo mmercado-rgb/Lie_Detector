@@ -2,20 +2,24 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security issue or integrity weakness in this project,
-please report it responsibly.
+If you discover a security issue, integrity weakness, or a way to produce an incorrect verifier result, report it responsibly.
 
-Do not open a public issue describing the vulnerability before reporting it
-privately.
+Please do not publish exploit details in a public issue before maintainers have had a chance to review them.
 
-You can report vulnerabilities by contacting the repository maintainer.
+Preferred reporting path:
 
-Please include:
+1. Use GitHub private vulnerability reporting for this repository if it is enabled.
+2. If that is not available, contact the repository maintainer privately.
+3. If no private channel is available, open a minimal public issue that does not include exploit details and ask for a private follow-up channel.
 
-- a description of the issue
-- steps to reproduce the issue
-- the potential impact
-- any suggested mitigation if known
+Include the following where possible:
+
+- a short description of the issue
+- affected files, scripts, or workflow stage
+- steps to reproduce
+- expected behavior versus observed behavior
+- impact on contract admission, execution evidence, or verification
+- any suggested mitigation
 
 ## Scope
 

@@ -1,25 +1,20 @@
 {
   "version": 2,
-  "task_id": "hardening-001",
-  "goal": "Implement requested change without regressions",
+  "task_id": "report-generator-example",
+  "goal": "Verify Codex created report_generator.py and it produces the required artifact",
   "inputs": {
     "repo_root": "."
   },
   "success_conditions": [
     {
-      "id": "tests-pass",
-      "type": "command_exit_zero",
-      "command": "python -m pytest -q"
-    },
-    {
-      "id": "lint-pass",
-      "type": "command_exit_zero",
-      "command": "python -m ruff check ."
-    },
-    {
-      "id": "required-file",
+      "id": "report-file-exists",
       "type": "file_exists",
-      "path": "src/app.py"
+      "path": "src/report_generator.py"
+    },
+    {
+      "id": "report-generator-runs",
+      "type": "command_exit_zero",
+      "command": "python src/report_generator.py"
     },
     {
       "id": "smoke-black-box",

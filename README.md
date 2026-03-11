@@ -1,169 +1,85 @@
-# Truth-Bound Workspace Bootstrap
+# Lie Detector
 
-A minimal Python project for experimenting with **truth-bound task execution**.
+Lie Detector is a small Python research project for experimenting with a truth-bound execution model.
 
-The core design goal is simple: **execution is not allowed to decide whether it succeeded**.
-The system separates contract admission, task execution, evidence generation, and independent verification so success claims must survive a verifier outside the executor.
+The central rule is strict: the executor is not allowed to declare success. It can run work and write evidence, but only the verifier is allowed to produce the final verdict.
 
-A **truth-bound workflow** is one where success claims must be derived from verifiable evidence rather than asserted by the executor.
+## Purpose
 
-Many systems allow executors to report their own success. This project explores a stricter model where success must be verified independently from produced artifacts.
+This repository demonstrates a workflow where:
 
-In this repository a **“lie”** means any claim about execution that cannot be verified from the produced evidence.
+- a success contract is admitted before execution
+- the executor produces evidence artifacts
+- a separate verifier checks those artifacts
+- `PASS` or `FAIL` comes only from verification
 
----
+In this project, a "lie" is any success claim that is not supported by the recorded evidence.
 
-# Execution Model
+## Truth-Bound Workflow
 
-```
+```text
 Contract admission
-    →
+    ->
 Execution
-    →
+    ->
 Evidence generation
-    →
+    ->
 Independent verification
-    →
+    ->
 Verdict
 ```
 
-Only the verifier is allowed to decide whether a run succeeded.
+Authority boundaries:
 
----
+- `scripts/preflight.py` admits or rejects a contract and prints `VALID` or `INVALID`
+- `scripts/run_agent.py` executes declared work and writes evidence
+- `scripts/verify.py` is the final authority and prints `PASS` or `FAIL`
 
-# What It Does
+The executor cannot claim success. A clean execution run is not the same thing as a verified success.
 
-* Validates a declared success contract before execution starts
-* Executes the declared work and writes evidence artifacts
-* Re-checks outcomes from evidence during independent verification
-* Rejects tampered artifacts and artifacts replayed from previous runs
+## Repository Layout
 
----
+```text
+Lie_Detector/
+|-- schemas/                      # contract schema
+|-- scripts/                      # entrypoints
+|   |-- preflight.py
+|   |-- run_agent.py
+|   `-- verify.py
+|-- src/                          # contract, evidence, and integrity logic
+|-- tests/                        # regression and proof-oriented tests
+|-- docs/                         # proof notes and work orders
+|-- .truth/                       # optional integrity state
+|-- workspace.success.json        # valid example contract
+|-- workspace.invalid.json        # admission failure example
+|-- workspace.execfail.json       # verification failure example
+`-- ARCHITECTURE.md
+```
 
-# Repository Layout
 
-* `scripts/preflight.py` — contract admission only, returns `VALID` or `INVALID`
-* `scripts/run_agent.py` — execution and evidence generation
-* `scripts/verify.py` — independent verification, returns `PASS` or `FAIL`
-* `schemas/workspace_success.schema.json` — authoritative contract schema
-* `workspace.success.json` — example valid contract
+## Quick Start
 
----
+Clone the repository and create a virtual environment.
 
-# Quick Start
+### Windows (PowerShell)
 
-Create a virtual environment and install developer dependencies.
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements-dev.txt
+````
+
+### macOS / Linux
 
 ```bash
 python -m venv .venv
-. .venv/bin/activate
+source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements-dev.txt
-pytest -q
-python -m ruff check .
 ```
 
-# Ways to Break It
-
-This repository is intentionally small so reviewers can attempt to violate the execution–verification separation.
-
-Some simple experiments:
-
-### 1. Tamper With Evidence
-
-Run a successful pipeline first.
-
-```bash
-python scripts/preflight.py workspace.success.json
-python scripts/run_agent.py workspace.success.json
-```
-
-Then modify any file under `.artifacts/` before verification.
-
-Example:
-
-```bash
-echo "tamper" >> .artifacts/some_file
-```
-
-Verification should fail:
-
-```bash
-python scripts/verify.py workspace.success.json
-```
-
-Expected result:
-
-```
-FAIL
-```
-
----
-
-### 2. Replay Artifacts From a Previous Run
-
-Run the pipeline once and save the `.artifacts/` directory.
-
-Then execute the agent again but replace the newly generated artifacts with the old ones before verification.
-
-Verification should detect the replay and fail.
-
----
-
-### 3. Modify the Contract After Execution
-
-Run the agent normally:
-
-```bash
-python scripts/run_agent.py workspace.success.json
-```
-
-Then edit the contract file before verification.
-
-Example change:
-
-* alter a declared success condition
-* change a command
-* alter an artifact reference
-
-Verification should fail because the evidence no longer matches the declared contract.
-
----
-
-### 4. Introduce Undeclared Artifacts
-
-Add a file to `.artifacts/` that was not declared by the contract.
-
-Verification should fail due to artifact closure checks.
-
----
-
-### 5. Break Declared Success Conditions
-
-Modify a command or expected output in the contract so that the declared condition cannot be satisfied.
-
-The executor may run successfully, but verification should still return:
-
-```
-FAIL
-```
-
----
-
-### What Should Not Be Possible
-
-A successful verification (`PASS`) should require that:
-
-* the contract was valid at admission
-* the executor produced evidence matching the contract
-* the evidence artifacts are untampered
-* the artifacts correspond to the current run
-* verification independently confirms the declared conditions
-
-If you discover a way to produce `PASS` while violating these assumptions, that would indicate a flaw in the model.
-
-
-Run the proof pipeline:
+### Run the truth-bound verification pipeline
 
 ```bash
 python scripts/preflight.py workspace.success.json
@@ -171,135 +87,77 @@ python scripts/run_agent.py workspace.success.json
 python scripts/verify.py workspace.success.json
 ```
 
-Expected verifier output for a clean run:
+Or use the helper script:
 
+```powershell
+.\scripts\reset_truth_state.ps1
 ```
-PASS
-```
 
----
-Try the Example Contracts
+### Expected outcomes for the included examples
 
-The repository includes three contracts that demonstrate different outcomes.
+* `workspace.success.json` → `VALID` → execution → `PASS`
+* `workspace.invalid.json` → `INVALID` at admission
+* `workspace.execfail.json` → admitted → execution → `FAIL`
 
-Valid contract (expected PASS)
+## Usage Example
+
+Example truth-bound workflow:
+
+```bash
 python scripts/preflight.py workspace.success.json
+# VALID
+
 python scripts/run_agent.py workspace.success.json
+# executor writes evidence under .artifacts/
+
 python scripts/verify.py workspace.success.json
-
-Expected result:
-
-PASS
-Invalid contract (blocked at admission)
-python scripts/preflight.py workspace.invalid.json
-
-Expected result:
-
-INVALID
-
-Execution will not start.
-
-Execution failure (verification FAIL)
-python scripts/preflight.py workspace.execfail.json
-python scripts/run_agent.py workspace.execfail.json
-python scripts/verify.py workspace.execfail.json
-
-Expected result:
-
-FAIL
-
-The executor runs, but verification rejects the result.
-
-# Docker
-
-Build the container:
-
-```bash
-docker build -f .devcontainer/Dockerfile -t lie-detector:truth-bound .
+# PASS
 ```
 
-Run the proof pipeline inside the container:
+What this proves:
 
-```bash
-docker run --rm -it \
-  -v "$(pwd):/workspaces/Lie_Detector" \
-  -w /workspaces/Lie_Detector \
-  lie-detector:truth-bound \
-  bash scripts/prove.sh
-```
+* the contract was accepted before execution
+* the recorded evidence matched the declared work
+* the evidence was fresh and untampered at verification time
+* the verifier, not the executor, decided the result
 
----
 
-# Optional Integrity Lock
+## What to Try
 
-The `.truth/lock.json` mechanism is an advanced integrity feature that can pin verifier/runtime behavior to specific file hashes and command resolutions.
+Useful adversarial checks include:
 
-It is optional and not required for the core workflow.
+- edit files in `.artifacts/` before verification
+- replay artifacts from a previous run
+- modify the contract after execution
+- add undeclared files to the artifact directory
+- declare conditions that the executor cannot actually satisfy
 
----
+The verifier should reject these cases with `FAIL`.
 
-# Limits
+## Limitations
 
 This repository is an experiment, not a production assurance system.
 
-It does **not** claim to solve hallucination, reliability, or safety in general.
+It does not claim to solve:
 
-It demonstrates a narrower principle:
+- hallucination in general
+- software correctness in general
+- system security in general
+- safety-critical validation
 
-**execution should not control verification.**
+It demonstrates a narrower claim: execution should not control verification.
 
----
+## Development Notes
 
-# Project Documents
+- The authoritative schema is `schemas/workspace_success.schema.json`
+- Architecture notes are in `ARCHITECTURE.md`
+- Security reporting guidance is in `SECURITY.md`
+- Research and usage limitations are in `DISCLAIMER.md`
 
-* `ARCHITECTURE.md`
-* `SECURITY.md`
-* `DISCLAIMER.md`
-* `docs/proof_matrix.md`
+## Contributing
 
----
+Small, focused contributions are preferred. See `CONTRIBUTING.md` for the expected workflow and `CODE_OF_CONDUCT.md` for community standards.
 
-# Feedback Welcome
-
-This project is experimental and feedback from engineers, security researchers, and verification practitioners is welcome.
-
-Particularly useful feedback areas include:
-
-* weaknesses in the execution/verification separation
-* possible artifact replay or tampering paths
-* contract validation gaps
-* integrity assumptions in the verifier
-* architectural simplifications
-
-Issues and discussion are encouraged.
-
----
-
-# License
+## License
 
 MIT. See `LICENSE`.
-
----
-
-# Repository Structure
-
-```
-Lie_Detector/
-├── schemas/                  # authoritative contract schema
-├── scripts/                  # admission, execution, verification entrypoints
-│   ├── preflight.py
-│   ├── run_agent.py
-│   └── verify.py
-├── src/                      # contract, integrity, and evidence logic
-│   ├── contract_model.py
-│   ├── evidence.py
-│   └── integrity.py
-├── tests/                    # proof and regression coverage
-├── docs/                     # proof matrix, work orders, questions
-├── .truth/                   # optional integrity state
-├── workspace.success.json    # valid example contract
-├── workspace.invalid.json    # invalid example contract
-└── workspace.execfail.json   # failing execution example
-```
-
-
