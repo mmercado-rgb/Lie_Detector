@@ -1,4 +1,5 @@
 from typing import Generic, Pattern, TypeVar
+from typing import Any
 
 _E = TypeVar("_E", bound=BaseException)
 
@@ -16,3 +17,5 @@ def raises(
     *,
     match: str | Pattern[str] | None = ...,
 ) -> RaisesContext[_E]: ...
+
+def approx(expected: Any, *, rel: float | None = ..., abs: float | None = ...) -> Any: ...

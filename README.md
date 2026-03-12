@@ -148,8 +148,19 @@ python scripts/run_agent.py workspace.success.json
 python scripts/verify.py workspace.success.json
 # PASS
 ```
+### Example Failure
 
-What this proves:
+```bash
+python scripts/preflight.py workspace.execfail.json
+# VALID
+
+python scripts/run_agent.py workspace.execfail.json
+# executor runs and records evidence
+
+python scripts/verify.py workspace.execfail.json
+# FAIL
+
+ What this proves:
 
 * the contract was accepted before execution
 * the recorded evidence matched the declared work
