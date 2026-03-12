@@ -1,26 +1,87 @@
 {
   "version": 2,
-  "task_id": "report-generator-example",
-  "goal": "Verify Codex created report_generator.py and it produces the required artifact",
+  "task_id": "experiment-energy-ledger",
+  "goal": "Verify the experiment package implements deterministic energy-accounting behaviors described by the experiment README",
   "inputs": {
     "repo_root": "."
   },
   "success_conditions": [
     {
-      "id": "report-file-exists",
+      "id": "experiment-package-file-exists",
       "type": "file_exists",
-      "path": "src/report_generator.py"
+      "path": "experiment/__init__.py"
     },
     {
-      "id": "report-generator-runs",
+      "id": "experiment-batch-runner-file-exists",
+      "type": "file_exists",
+      "path": "experiment/batch_runner.py"
+    },
+    {
+      "id": "experiment-package-imports",
       "type": "command_exit_zero",
-      "command": "python src/report_generator.py"
+      "command": "python -c \"from experiment import build_ledger, make_closed_run_data, make_result_record, run_batch, summarize_results\""
     },
     {
-      "id": "smoke-black-box",
+      "id": "experiment-results-schema-file-exists",
+      "type": "file_exists",
+      "path": "experiment/results_schema.py"
+    },
+    {
+      "id": "experiment-analyze-runs-file-exists",
+      "type": "file_exists",
+      "path": "experiment/analyze_runs.py"
+    },
+    {
+      "id": "experiment-run-batch-closed",
+      "type": "command_exit_zero",
+      "command": "python -c \"from experiment import make_closed_run_data, run_batch; out=run_batch([make_closed_run_data()], 1e-9); assert isinstance(out, list); assert len(out)==1; assert set(out[0].keys())=={'ledger','residual','label'}; assert out[0]['label']=='CLOSED'\""
+    },
+    {
+      "id": "experiment-smoke-file-exists",
+      "type": "file_exists",
+      "path": "scripts/smoke.py"
+    },
+    {
+      "id": "experiment-smoke-stored-energy",
       "type": "verifier_stdout_contains",
       "command": "python scripts/smoke.py",
-      "contains": "OK"
+      "contains": "stored_energy_example: 6.5"
+    },
+    {
+      "id": "experiment-smoke-integrate-power",
+      "type": "verifier_stdout_contains",
+      "command": "python scripts/smoke.py",
+      "contains": "integrate_power_example: 4.0"
+    },
+    {
+      "id": "experiment-smoke-closed",
+      "type": "verifier_stdout_contains",
+      "command": "python scripts/smoke.py",
+      "contains": "closed_system: residual=0.0, label=CLOSED"
+    },
+    {
+      "id": "experiment-smoke-underaccounted",
+      "type": "verifier_stdout_contains",
+      "command": "python scripts/smoke.py",
+      "contains": "underaccounted_energy: residual=1.0, label=UNDERACCOUNTED"
+    },
+    {
+      "id": "experiment-smoke-apparent-excess",
+      "type": "verifier_stdout_contains",
+      "command": "python scripts/smoke.py",
+      "contains": "apparent_excess_energy: residual=-1.0, label=APPARENT_EXCESS"
+    },
+    {
+      "id": "experiment-smoke-run-to-ledger",
+      "type": "verifier_stdout_contains",
+      "command": "python scripts/smoke.py",
+      "contains": "run_to_ledger_closed: residual=0.0, label=CLOSED"
+    },
+    {
+      "id": "experiment-smoke-summary",
+      "type": "verifier_stdout_contains",
+      "command": "python scripts/smoke.py",
+      "contains": "analyze_runs_mixed: total_runs=3, count_closed=1, count_underaccounted=1, count_apparent_excess=1"
     }
   ],
   "evidence": {
